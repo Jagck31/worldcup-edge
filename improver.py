@@ -32,7 +32,9 @@ from pipeline.run_live import load_config  # noqa: E402
 STATE = ROOT / "data" / "processed" / "dashboard_state.json"
 OPS = ROOT / "data" / "processed" / "ops_report.json"
 PROPOSALS = ROOT / "data" / "processed" / "improvement_proposals.json"
-IMPL_LOG = ROOT / "data" / "processed" / "improvements_log.json"   # written by implementer.py
+IMPL_LOG = ROOT / "data" / "processed" / "improvements_log.json"   # implementer + user-deny resolutions
+RESOLVED_SEED = ROOT / "data" / "manual" / "resolved_proposals.json"  # git-tracked: Claude's resolutions
+TRIGGER = ROOT / "data" / "processed" / "improver_now"             # touch to refill proposals early
 LOGMD = ROOT / "IMPROVEMENT_LOG.md"
 
 # A compact digest of the system so the model proposes relevant, grounded changes.
@@ -83,14 +85,15 @@ def metrics_snapshot() -> dict:
 
 def implementation_history() -> dict:
     """What the implementer has already done — so we don't repeat and can react to failures."""
-    log = _load(IMPL_LOG)
     done, reverted = [], []
-    for e in log.get("entries", []):
-        if e.get("status") == "implemented":
+    for e in _load(IMPL_LOG).get("entries", []):
+        if e.get("status") in ("implemented", "denied"):
             done.append(e.get("title"))
         elif e.get("status") in ("reverted", "failed", "skipped"):
             reverted.append({"title": e.get("title"), "why": e.get("reason")})
-    return {"already_implemented": done[-20:], "tried_and_not_landed": reverted[-12:]}
+    for e in _load(RESOLVED_SEED).get("resolved", []):   # Claude's git-tracked resolutions
+        done.append(e.get("title"))
+    return {"already_implemented": [t for t in done if t][-30:], "tried_and_not_landed": reverted[-12:]}
 
 
 def propose(snapshot: dict, history: dict, model: str | None, n: int) -> list[dict] | None:
@@ -191,7 +194,17 @@ def main() -> None:
             print(f"improver cycle error: {type(exc).__name__}: {exc}", flush=True)
         if args.once:
             break
-        time.sleep(interval)
+        # Responsive refill: wake early when a resolution (deny / implement) nudges us.
+        slept = 0
+        while slept < interval:
+            if TRIGGER.exists():
+                try:
+                    TRIGGER.unlink()
+                except OSError:
+                    pass
+                break
+            time.sleep(min(20, interval - slept))
+            slept += 20
 
 
 if __name__ == "__main__":

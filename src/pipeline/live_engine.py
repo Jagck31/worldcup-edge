@@ -72,6 +72,10 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _norm(title) -> str:
+    return " ".join(str(title or "").lower().split())
+
+
 @dataclass
 class Job:
     """One periodic unit of work with its own cadence, trigger flag, and last-run telemetry."""
@@ -268,6 +272,9 @@ class LiveEngine:
             self.trigger("results")
         if req.get("retrain"):
             self.trigger("retrain")
+        if req.get("resolve"):
+            self._record_resolutions(req["resolve"])
+            self._persist()  # reflect the cleared proposal on the dashboard immediately
 
     # ----- jobs ------------------------------------------------------------------------
 
@@ -488,7 +495,12 @@ class LiveEngine:
         try:
             data = json.loads(prop_path.read_text(encoding="utf-8"))
             entries = data.get("entries", [])
-            self.state["proposals"] = {"updated_at": data.get("updated_at"), "latest": entries[-1] if entries else None}
+            latest = entries[-1] if entries else None
+            if latest:  # hide resolved (implemented/denied) so only OPEN proposals show
+                resolved = self._resolved_titles()
+                latest = dict(latest)
+                latest["proposals"] = [p for p in latest.get("proposals", []) if _norm(p.get("title")) not in resolved]
+            self.state["proposals"] = {"updated_at": data.get("updated_at"), "latest": latest}
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             self.state.pop("proposals", None)
         try:
@@ -496,6 +508,49 @@ class LiveEngine:
             self.state["improvements"] = {"updated_at": impl.get("updated_at"), "entries": (impl.get("entries") or [])[-12:]}
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             self.state.pop("improvements", None)
+
+    def _resolved_titles(self) -> set:
+        """Titles the improver should drop: implemented/denied in the runtime log + Claude's
+        git-tracked resolutions (data/manual/resolved_proposals.json)."""
+        titles: set = set()
+        impl = STATE_PATH.parent / "improvements_log.json"
+        seed = STATE_PATH.parent.parent / "manual" / "resolved_proposals.json"
+        try:
+            for e in json.loads(impl.read_text(encoding="utf-8")).get("entries", []):
+                if e.get("status") in ("implemented", "denied"):
+                    titles.add(_norm(e.get("title")))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+        try:
+            for e in json.loads(seed.read_text(encoding="utf-8")).get("resolved", []):
+                titles.add(_norm(e.get("title")))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+        return titles
+
+    def _record_resolutions(self, items: list) -> None:
+        """Persist user deny/implement clicks from the web into the runtime log + nudge the improver."""
+        path = STATE_PATH.parent / "improvements_log.json"
+        try:
+            log = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            log = {"entries": []}
+        for it in items:
+            title = (it or {}).get("title")
+            if not title:
+                continue
+            log.setdefault("entries", []).append(
+                {"at": _now_iso(), "title": title, "status": (it.get("status") or "denied"), "by": "user"}
+            )
+        log["entries"] = log["entries"][-200:]
+        log["updated_at"] = _now_iso()
+        try:
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(log, indent=2), encoding="utf-8")
+            tmp.replace(path)
+            (STATE_PATH.parent / "improver_now").write_text("1", encoding="utf-8")  # refill now
+        except OSError:
+            pass
 
     def _persist(self) -> None:
         self.state["generated_at"] = _now_iso()

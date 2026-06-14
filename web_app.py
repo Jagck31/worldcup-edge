@@ -198,6 +198,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     font-family:var(--mono);font-size:10px;padding:3px 7px;white-space:nowrap;opacity:0;pointer-events:none;border:1px solid var(--lime)}
   .chart:hover .cross,.chart:hover .tip{opacity:1}
 
+  .deny{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--line);
+    background:var(--glass2);color:var(--ink2);padding:4px 10px;cursor:pointer;transition:.12s}
+  .deny:hover{background:var(--red);color:#fff;border-color:var(--line)}
+  .deny[disabled]{opacity:.5;cursor:default;background:var(--glass2);color:var(--ink2)}
   .note{border:1px solid var(--line);border-left:4px solid var(--blue);background:var(--glass);
     padding:11px 13px;margin-bottom:9px;font-size:13px;line-height:1.55;color:var(--ink2)}
   .note b{color:var(--ink)}
@@ -527,7 +531,8 @@ function renderOps(){const o=STATE.ops||null,pr=STATE.proposals||null;
   if(!latest||!latest.length){h+=`<div class="empty">no AI proposals yet — start wc-improver (needs OPENAI_API_KEY)</div>`;}
   else{h+=latest.map(p=>`<div class="row"><div style="flex:1;min-width:0">
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span class="nm">${esc(p.title||"")}</span>
-      <span class="tag ${p.impact==='high'?'buy':(p.impact==='low'?'':'act')}">${esc(p.impact||'')}</span><span class="tag">${esc(p.area||'')}</span></div>
+      <span class="tag ${p.impact==='high'?'buy':(p.impact==='low'?'':'act')}">${esc(p.impact||'')}</span><span class="tag">${esc(p.area||'')}</span>
+      <button class="deny" data-t="${esc(p.title||'')}" style="margin-left:auto">deny</button></div>
     <div class="meta" style="text-transform:none"><span>${esc(p.rationale||'')}</span></div>
     <div class="meta" style="text-transform:none"><span><b>First step:</b> ${esc(p.first_step||'')}</span></div></div></div>`).join("");}
   $("sec-ops").innerHTML=h;}
@@ -565,6 +570,9 @@ function connect(){try{es=new EventSource("events");
 function startPolling(){if(pollTimer)return;poll();pollTimer=setInterval(poll,8000);}
 async function poll(){try{const r=await fetch("state.json?t="+Date.now());if(!r.ok)throw 0;applyState(await r.json());}catch(e){setConn(false);}}
 
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest(".deny");if(!b||b.disabled)return;
+  b.disabled=true;b.textContent="denied ✓";const row=b.closest(".row");if(row)row.style.opacity=".5";
+  fetch("resolve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:b.dataset.t,status:"denied"})}).catch(()=>{});});
 $("refresh").onclick=async()=>{const b=$("refresh");b.classList.add("spin");
   try{await fetch("trigger",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh:true})});}catch(e){}
   setTimeout(()=>b.classList.remove("spin"),1400);};
@@ -612,24 +620,41 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path.split("?", 1)[0] == "/trigger":
-            length = int(self.headers.get("Content-Length", 0) or 0)
-            raw = self.rfile.read(length) if length else b"{}"
-            try:
-                req = json.loads(raw or b"{}")
-            except json.JSONDecodeError:
-                req = {"refresh": True}
-            allowed = {k: bool(req.get(k)) for k in ("refresh", "resim", "results", "retrain") if req.get(k)}
-            if not allowed:
-                allowed = {"refresh": True}
-            try:
-                CONTROL.parent.mkdir(parents=True, exist_ok=True)
-                CONTROL.write_text(json.dumps(allowed), encoding="utf-8")
-            except OSError:
-                pass
+        path = self.path.split("?", 1)[0]
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            req = json.loads(raw or b"{}")
+        except json.JSONDecodeError:
+            req = {}
+        if path == "/trigger":
+            allowed = {k: True for k in ("refresh", "resim", "results", "retrain") if req.get(k)} or {"refresh": True}
+            self._merge_control(allowed)
             self._send(200, json.dumps({"ok": True, "queued": allowed}))
+        elif path == "/resolve":
+            title = req.get("title")
+            if title:
+                self._merge_control({"resolve": [{"title": title, "status": req.get("status", "denied")}]})
+            self._send(200, json.dumps({"ok": bool(title)}))
         else:
             self._send(404, json.dumps({"error": "not found"}))
+
+    def _merge_control(self, patch: dict) -> None:
+        """Merge a control patch into engine_control.json (accumulate resolves; don't clobber)."""
+        try:
+            cur = json.loads(CONTROL.read_text(encoding="utf-8")) if CONTROL.exists() else {}
+        except (json.JSONDecodeError, OSError):
+            cur = {}
+        for key, val in patch.items():
+            if key == "resolve":
+                cur.setdefault("resolve", []).extend(val)
+            else:
+                cur[key] = val
+        try:
+            CONTROL.parent.mkdir(parents=True, exist_ok=True)
+            CONTROL.write_text(json.dumps(cur), encoding="utf-8")
+        except OSError:
+            pass
 
     def _stream_events(self) -> None:
         """Server-Sent Events: push the full state whenever the file changes; ping otherwise."""

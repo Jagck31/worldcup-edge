@@ -1,0 +1,8 @@
+{
+  "_comment": "Resolutions Claude (the implementer) has made. Unioned with the box's runtime data/processed/improvements_log.json (user 'deny' clicks). The improver excludes everything here so it keeps proposing NEW ideas; the dashboard hides resolved proposals.",
+  "resolved": [
+    {"title": "Implement Calibration Method", "status": "denied", "note": "Model already fits isotonic+temperature and correctly selects 'none' on validation; calibration didn't help. Addressed the real waste instead: full-data deploy refit.", "at": "2026-06-14"},
+    {"title": "Enhance Feature Set with Historical Performance", "status": "denied", "note": "Tried competitive-only form; measured worse (0.8583->0.8595) and reverted. The GBT already extracts this from existing features.", "at": "2026-06-14"},
+    {"title": "Enhance Data Feed Integration", "status": "implemented", "note": "Added per-day (eventsday) polling across a tournament window + merge preferring most-advanced state; recovered finished games the season feed hid.", "at": "2026-06-14"}
+  ]
+}
