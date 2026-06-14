@@ -92,11 +92,20 @@ def overlay_results(
         results["home_team"] = results["home_team"].map(normalizer.canonical)
         results["away_team"] = results["away_team"].map(normalizer.canonical)
         results["date"] = pd.to_datetime(results["date"])
-        pair_to_result = {frozenset((r["home_team"], r["away_team"])): r for _, r in results.iterrows()}
+        # Pair -> all results for that pairing. A group + knockout rematch shares a pair, so we
+        # pick the result CLOSEST in date to the fixture rather than last-write-wins.
+        pair_to_results: dict = {}
+        for _, r in results.iterrows():
+            pair_to_results.setdefault(frozenset((r["home_team"], r["away_team"])), []).append(r)
         for i, fx in fixtures.iterrows():
-            match = pair_to_result.get(frozenset((fx["home_team"], fx["away_team"])))
-            if match is None:
+            cands = pair_to_results.get(frozenset((fx["home_team"], fx["away_team"])))
+            if not cands:
                 continue
+            fx_date = pd.to_datetime(fx.get("date"), errors="coerce")
+            if len(cands) > 1 and pd.notna(fx_date):
+                match = min(cands, key=lambda r: abs((r["date"] - fx_date).days))
+            else:
+                match = cands[0]
             if match["home_team"] == fx["home_team"]:
                 home_score, away_score = int(match["home_score"]), int(match["away_score"])
             else:
@@ -178,7 +187,9 @@ def predict_fixtures(
             "exp_away_goals": round(away_xg, 2),
             "likely_score": likely_score,
             "status": str(fx["status"]),
-            "out_of_sample": when > DATA_CUTOFF,
+            # Compare on DATE (not the kickoff datetime), else any non-midnight kickoff on the
+            # cutoff day is wrongly flagged out-of-sample even though it was in the training base.
+            "out_of_sample": pd.Timestamp(fx["date"]).normalize() > DATA_CUTOFF,
         }
         if str(fx["status"]) == "completed":
             home_score, away_score = int(fx["home_score"]), int(fx["away_score"])

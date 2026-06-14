@@ -12,6 +12,8 @@ edge-finding + sizing strategy can be tracked against live prices over the tourn
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 
@@ -23,8 +25,14 @@ def load_account(path: Path, starting_bankroll: float) -> dict:
     if path.exists():
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            # Don't silently zero the ledger — preserve the corrupt file for inspection and warn loudly.
+            print(f"WARNING: {path.name} is corrupt ({exc}); starting a fresh account. "
+                  f"Saved corrupt copy to {path.name}.corrupt", file=sys.stderr, flush=True)
+            try:
+                os.replace(path, path.with_suffix(".json.corrupt"))
+            except OSError:
+                pass
     return {
         "starting_bankroll": round(float(starting_bankroll), 2),
         "cash": round(float(starting_bankroll), 2),
@@ -109,6 +117,9 @@ def update_account(
         price = float(row.get("exec_price", 0.0))
         if price <= 0 or price >= 1:
             continue
+        mid = market_prices.get(row.get("market_id"))
+        if mid is not None and (mid >= SETTLE_HIGH or mid <= SETTLE_LOW):
+            continue  # market already resolved — settlement handles it; never (re)deploy here
         if size_mode == "kelly":
             target = float(row.get("capped_size_usd") or row.get("kelly_size_usd") or 0.0)
         else:
@@ -126,11 +137,18 @@ def update_account(
         account["cash"] = round(account["cash"] - delta, 2)
         invested_now = round(invested_now + delta, 2)
         if held:
-            held["shares"] = round(held["shares"] + add_shares, 1)
+            new_shares = round(held["shares"] + add_shares, 1)
+            # share-weighted blend of model_prob so old shares aren't retro-revalued
+            old_mp = float(held.get("model_prob", 0.0) or 0.0)
+            new_mp = float(row.get("model_prob", old_mp) or old_mp)
+            held["model_prob"] = round((held["shares"] * old_mp + add_shares * new_mp) / new_shares, 4) if new_shares else round(new_mp, 4)
+            held["shares"] = new_shares
             held["stake"] = round(held["stake"] + delta, 2)
             held["entry_price"] = round(held["stake"] / held["shares"], 4) if held["shares"] else round(price, 4)
-            held["current_price"] = round(price, 4)
-            held["current_value"] = round(held["shares"] * price, 2)
+            # mark to the MID (consistent with the settle/mark pass above), not the slate ask
+            mark = _current_price(held["side"], mid) if mid is not None else price
+            held["current_price"] = round(mark, 4)
+            held["current_value"] = round(held["shares"] * mark, 2)
             held["unrealized_pnl"] = round(held["current_value"] - held["stake"], 2)
         else:
             account["n_trades"] += 1
@@ -197,6 +215,9 @@ def update_account(
 
 
 def save_account(account: dict, path: Path) -> Path:
+    """Atomic write (temp + os.replace) so a crash mid-write can't truncate the ledger."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(account, indent=2, default=str), encoding="utf-8")
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(account, indent=2, default=str), encoding="utf-8")
+    os.replace(tmp, path)
     return path

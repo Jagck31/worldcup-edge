@@ -217,7 +217,8 @@ def _emit_nn_curve(model: object, progress, max_points: int = 20) -> None:
 
 
 def train_1x2(
-    features: pd.DataFrame, feature_columns: list[str], progress=None, model_type: str = "gbt"
+    features: pd.DataFrame, feature_columns: list[str], progress=None, model_type: str = "gbt",
+    refit_full: bool = False,
 ) -> TrainResult:
     """Train a calibrated 1X2 classifier with a chronological train/calibrate/validate split.
 
@@ -305,7 +306,10 @@ def train_1x2(
     # nothing to mismatch), refit the model we actually deploy on ALL rows so production
     # predictions use 100% of the data. Reports stay the honest split-based numbers.
     deploy_model = model
-    if calibrator is None and progress is None:  # skip during streaming UI fits
+    # Refit the SHIPPED model on all rows when asked (callers set refit_full identically, so
+    # every engine deploys the same model; the reports above stay the honest held-out estimate).
+    # Only safe when no calibrator was selected (nothing tuned to the split model's outputs).
+    if calibrator is None and refit_full:
         try:
             refit, _ = _build_classifier(model_type=model_type)
             refit.fit(X, y_encoded)

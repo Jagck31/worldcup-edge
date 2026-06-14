@@ -343,7 +343,7 @@ function renderKpis(){
     {id:"ev",c:"c3",lab:"Expected value",text:money(a.expected_value_usd),raw:a.expected_value_usd,cls:sgn(a.expected_value_usd),
       sub:a.expected_roi_pct!=null?`${a.expected_roi_pct>=0?'+':''}${num(a.expected_roi_pct,1)}% exp roi`:""},
     {id:"act",c:"c2",lab:"Actionable",text:act!=null?act:"—",raw:act,sub:`${m.edges_found!=null?m.edges_found:'—'} found`},
-    {id:"fav",c:"c2",lab:"Favourite",text:esc(fav.team||"—"),raw:null,sm:true,sub:fav.p_champion!=null?`${pct(fav.p_champion)} champ`:""},
+    {id:"fav",c:"c2",lab:"Favourite",text:(fav.team||"—"),raw:null,sm:true,sub:fav.p_champion!=null?`${pct(fav.p_champion)} champ`:""},
     {id:"open",c:"c4",lab:"Open positions",text:a.n_open!=null?a.n_open:"—",raw:a.n_open,sub:`${a.n_settled!=null?a.n_settled:0} settled · ${money(a.invested)} in`},
     {id:"ll",c:"c3",lab:"Model log-loss",text:cal.calibrated!=null?num(cal.calibrated,4):"—",raw:cal.calibrated,sm:true,sub:cal.method?esc(cal.method):""},
   ];
@@ -548,7 +548,7 @@ function tickJobs(){if(!jobsBase)return;const dt=(Date.now()-jobsAt)/1000;
   Object.entries(jobsBase).forEach(([n,j])=>{const el=$("job-"+n);if(!el)return;
     if(j.status==="running"){el.textContent="running…";return;}el.textContent="next "+dur(Math.max(0,(j.next_in_sec||0)-dt));});}
 
-function applyState(s){STATE=s;$("overlay").style.display="none";
+function applyState(s){STATE=s;recvAt=Date.now();$("overlay").style.display="none";
   nav();show();renderTicker();renderLive();renderKpis();renderActive();renderEngine();
   const up=(STATE.engine||{}).uptime_sec;$("sub").textContent="updated "+rel(STATE.generated_at)+(up!=null?" · up "+dur(up):"");}
 function setConn(on){$("led").className="led "+(on?"on":"off");$("conntxt").textContent=on?"live":"reconnecting";}

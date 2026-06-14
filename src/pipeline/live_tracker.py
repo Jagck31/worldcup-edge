@@ -87,7 +87,7 @@ def build_context(config: dict, history_years: int = 12) -> TrackerContext:
     matrix = _to_model_matrix(labelled, feature_columns)
     matrix["date"] = labelled["date"].to_numpy()
     matrix["target_1x2"] = labelled["target_1x2"].to_numpy()
-    train_result = train_1x2(matrix, feature_columns, model_type=str(config.get("model_type", "gbt")))
+    train_result = train_1x2(matrix, feature_columns, model_type=str(config.get("model_type", "gbt")), refit_full=True)
     predictor = CalibratedPredictor.from_train_result(train_result)
     goal_model = PoissonGoalModel().fit(recent.tail(8000))
 
@@ -164,7 +164,7 @@ def recompute(
         in_play_pairs |= set(frozen.keys())
     wc_results = pd.read_csv(WC_RESULTS_PATH) if WC_RESULTS_PATH.exists() else None
 
-    wc_live = _live_wc_rows(WC_RESULTS_PATH, context.normalizer, context.results_full["date"].max())
+    wc_live = _live_wc_rows(WC_RESULTS_PATH, context.normalizer, context.results_full["date"].max(), existing=context.results_full)
     live_n = 0 if wc_live is None else len(wc_live)
     if live_n:
         elo_input = pd.concat([context.results_full, wc_live], ignore_index=True, sort=False).sort_values("date")
@@ -200,9 +200,11 @@ def merge_finished_into_csv(
 ) -> dict:
     """Insert newly-finished feed results into the results CSV; preserve hand-set xG.
 
-    Matching is by unordered team pair (group games are unique pairings). Existing rows keep
-    their xG unless the feed reports a different score, in which case the score is updated and
-    the stale xG dropped. Returns the new/changed deltas for alerting.
+    Matching is by unordered team pair WITHIN ~5 days, so a group-stage game and a later
+    knockout rematch of the same two teams stay distinct rows (a pair-only key would collapse
+    them, silently losing one real result from the Elo feed). Existing rows keep their xG unless
+    the feed reports a different score, in which case the score is updated and the stale xG
+    dropped. Returns the new/changed deltas for alerting.
     """
     finished = [e for e in events if e.finished]
     if csv_path.exists():
@@ -213,14 +215,22 @@ def merge_finished_into_csv(
         if col not in existing.columns:
             existing[col] = pd.NA
 
-    index: dict[frozenset, int] = {}
+    index: dict[frozenset, list] = {}  # pair -> [(row_pos, date)]
     for i, row in existing.iterrows():
-        index[frozenset((normalizer.canonical(str(row["home_team"])), normalizer.canonical(str(row["away_team"]))))] = i
+        key = frozenset((normalizer.canonical(str(row["home_team"])), normalizer.canonical(str(row["away_team"]))))
+        index.setdefault(key, []).append((i, pd.to_datetime(row["date"], errors="coerce")))
+
+    def _match(event) -> int | None:
+        ev_date = pd.to_datetime(event.date, errors="coerce")
+        for pos, d in index.get(event.pair, []):
+            if pd.isna(d) or pd.isna(ev_date) or abs((d - ev_date).days) <= 5:
+                return pos
+        return None
 
     new: list[LiveEvent] = []
     changed: list[LiveEvent] = []
     for event in finished:
-        pos = index.get(event.pair)
+        pos = _match(event)
         if pos is None:
             existing.loc[len(existing)] = {
                 "date": event.date,
@@ -232,7 +242,7 @@ def merge_finished_into_csv(
                 "away_xg": pd.NA,
             }
             new.append(event)
-            index[event.pair] = len(existing) - 1
+            index.setdefault(event.pair, []).append((len(existing) - 1, pd.to_datetime(event.date, errors="coerce")))
             continue
         row = existing.loc[pos]
         same_orient = normalizer.canonical(str(row["home_team"])) == event.home

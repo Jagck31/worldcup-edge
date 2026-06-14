@@ -623,20 +623,42 @@ def _build_squads(path: Path, normalizer: TeamNameNormalizer, elo_leaderboard: l
     }
 
 
-def _live_wc_rows(path: Path, normalizer: TeamNameNormalizer, after_date) -> pd.DataFrame | None:
+def _live_wc_rows(path: Path, normalizer: TeamNameNormalizer, after_date, existing: pd.DataFrame | None = None) -> pd.DataFrame | None:
     """Live World Cup results that occurred after the dataset cutoff — to feed the Elo so
-    ratings update as the tournament plays out (these are NOT added to model training)."""
+    ratings update as the tournament plays out (these are NOT added to model training).
+
+    Dedups by match identity (unordered team pair within ±5 days) against ``existing`` (the
+    training base), so a fixture present in BOTH results.csv and wc2026_results.csv on adjacent
+    dates isn't rated twice by the Elo engine."""
     if not path.exists():
         return None
     frame = pd.read_csv(path)
     if frame.empty:
         return None
     frame["date"] = pd.to_datetime(frame["date"])
-    frame = frame[frame["date"] > pd.Timestamp(after_date)].dropna(subset=["home_score", "away_score"])
+    frame = frame[frame["date"] > pd.Timestamp(after_date)].dropna(subset=["home_score", "away_score"]).copy()
     if frame.empty:
         return None
     frame["home_team"] = frame["home_team"].map(normalizer.canonical)
     frame["away_team"] = frame["away_team"].map(normalizer.canonical)
+    if existing is not None and not existing.empty:
+        ex = existing[["date", "home_team", "away_team"]].copy()
+        ex["date"] = pd.to_datetime(ex["date"])
+        ex = ex[ex["date"] >= pd.Timestamp(after_date) - pd.Timedelta(days=30)]  # only recent can collide
+        ex_pairs: dict = {}
+        for _, r in ex.iterrows():
+            key = frozenset((normalizer.canonical(str(r["home_team"])), normalizer.canonical(str(r["away_team"]))))
+            ex_pairs.setdefault(key, []).append(r["date"])
+
+        def _dup(row) -> bool:
+            for d in ex_pairs.get(frozenset((row["home_team"], row["away_team"])), []):
+                if abs((row["date"] - d).days) <= 5:
+                    return True
+            return False
+
+        frame = frame[~frame.apply(_dup, axis=1)]
+        if frame.empty:
+            return None
     frame["home_score"] = frame["home_score"].astype(int)
     frame["away_score"] = frame["away_score"].astype(int)
     frame["tournament"] = "FIFA World Cup"
@@ -716,7 +738,7 @@ def run_pipeline(
     normalizer = TeamNameNormalizer.from_yaml(ALIASES_PATH)
     hooks.stage("Build Elo")
     with log.step("Build Elo") as step:
-        wc_live = _live_wc_rows(WC_RESULTS_PATH, normalizer, results_full["date"].max())
+        wc_live = _live_wc_rows(WC_RESULTS_PATH, normalizer, results_full["date"].max(), existing=results_full)
         live_n = 0 if wc_live is None else len(wc_live)
         if live_n:
             elo_input = pd.concat([results_full, wc_live], ignore_index=True, sort=False).sort_values("date")
@@ -754,7 +776,8 @@ def run_pipeline(
         matrix["date"] = labelled["date"].to_numpy()
         matrix["target_1x2"] = labelled["target_1x2"].to_numpy()
         train_result = train_1x2(
-            matrix, feature_columns, progress=hooks.train_step, model_type=str(config.get("model_type", "gbt"))
+            matrix, feature_columns, progress=hooks.train_step,
+            model_type=str(config.get("model_type", "gbt")), refit_full=True,
         )
         importance = [
             {"feature": name, "importance": round(value, 4)}

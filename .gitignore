@@ -10,6 +10,9 @@ __pycache__/
 *.joblib
 # Runtime results the box accumulates — git-deploy must not clobber them
 data/manual/wc2026_results.csv
+# Box-local deploy marker + engine lock (runtime, never committed)
+.last_deployed_sha
+data/processed/engine.lock
 data/raw/*
 data/processed/*
 data/cache/*

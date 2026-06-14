@@ -216,7 +216,7 @@ def attempt(proposal: dict, model: str | None, restart: bool) -> dict:
                 "reason": "tests failed", "test_tail": tail[-400:]}
     commit = "-"
     if ensure_git():
-        git("add", "-A")
+        git("add", rel)  # stage ONLY the edited file so each auto-improve commit is a clean single-file revert
         if git("commit", "-m", f"auto-improve: {title}")[0] == 0:
             commit = git("rev-parse", "--short", "HEAD")[1]
     if restart:
@@ -256,8 +256,8 @@ def main() -> None:
 
     config = load_config(ROOT / "config.yaml")
     llm.load_env(ROOT / ".env")
-    if not config.get("implementer_enabled", True):
-        print("implementer disabled (implementer_enabled: false) — Claude is the implementer. Idling.", flush=True)
+    if not config.get("implementer_enabled", False):  # fail-safe: absent/empty config => OFF, not autonomous
+        print("implementer disabled (implementer_enabled not true) — Claude is the implementer. Idling.", flush=True)
         if args.once:
             return
         while True:  # stay running (idle) so systemd doesn't restart-loop us

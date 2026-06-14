@@ -31,7 +31,25 @@ from pipeline.run_live import load_config  # noqa: E402
 
 STATE = ROOT / "data" / "processed" / "dashboard_state.json"
 REPORT = ROOT / "data" / "processed" / "ops_report.json"
+OPS_STATE = ROOT / "data" / "processed" / "ops_state.json"
 WC_SERVICES = ("wc-engine", "wc-web")
+
+
+def _load_restart_state() -> dict:
+    try:
+        return {k: float(v) for k, v in json.loads(OPS_STATE.read_text(encoding="utf-8")).items()}
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+        return {}
+
+
+def _save_restart_state(last_restart: dict) -> None:
+    try:
+        OPS_STATE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = OPS_STATE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(last_restart), encoding="utf-8")
+        tmp.replace(OPS_STATE)
+    except OSError:
+        pass
 
 
 def _now() -> str:
@@ -116,16 +134,18 @@ def collect(config: dict, port: int) -> dict:
 
 
 def auto_heal(signals: dict, last_restart: dict, cooldown: int) -> list[str]:
-    """Restart ONLY wc-* services for clear failures, rate-limited per service."""
+    """Restart ONLY wc-* services for clear failures, rate-limited per service.
+    Uses wall-clock time + a persisted state file so the cooldown survives watchdog restarts."""
     actions: list[str] = []
-    now = time.monotonic()
+    now = time.time()
 
     def restart(unit: str, why: str) -> None:
-        if now - last_restart.get(unit, -1e9) < cooldown:
+        if now - last_restart.get(unit, -1e18) < cooldown:
             actions.append(f"skipped restart {unit} (cooldown) — {why}")
             return
         code, out = _systemctl("restart", unit)
         last_restart[unit] = now
+        _save_restart_state(last_restart)  # durable so a watchdog bounce can't reset the limiter
         actions.append(f"restarted {unit} ({'ok' if code == 0 else 'FAILED: ' + out[:80]}) — {why}")
 
     if not signals["web_ok"] or not _is_active("wc-web"):
@@ -208,7 +228,7 @@ def main() -> None:
     port = args.port or int(config.get("web_port", 8000))
     cooldown = int(config.get("ops_restart_cooldown_sec", 600))
     model = config.get("ops_model") or None
-    last_restart: dict = {}
+    last_restart: dict = _load_restart_state()  # durable cooldown across watchdog restarts
 
     print(f"ops watchdog: every {interval}s, port {port}, llm={'on' if llm.have_key() else 'off'}, "
           f"auto-heal={WC_SERVICES} (cooldown {cooldown}s). Ctrl+C to stop.", flush=True)

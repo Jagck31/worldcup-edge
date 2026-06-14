@@ -153,8 +153,25 @@ class LiveEngine:
         self.errors.append(line)
         self.errors = self.errors[-12:]
 
+    def _acquire_lock(self) -> None:
+        """Best-effort single-instance guard so two engines never write the ledger at once.
+        POSIX flock (the deploy target); silently skipped on Windows dev."""
+        try:
+            import fcntl
+        except ImportError:
+            return
+        lock_path = STATE_PATH.parent / "engine.lock"
+        try:
+            self._lock_fh = open(lock_path, "w")
+            fcntl.flock(self._lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._lock_fh.write(str(os.getpid()))
+            self._lock_fh.flush()
+        except (OSError, BlockingIOError) as exc:
+            raise SystemExit(f"Another live engine already holds {lock_path} — refusing to start a second writer ({exc}).")
+
     def startup(self) -> None:
         """Train the model once, seed state, and run one pass of every live job."""
+        self._acquire_lock()
         self._emit("startup:context")
         self.ctx = build_context(self.config, history_years=self.history_years)
         self.client = LiveScoreClient.from_config(self.config, self.ctx.normalizer)
@@ -420,8 +437,9 @@ class LiveEngine:
                 self.state["portfolio"] = build_portfolio(bets, self._samples, bankroll_usd=self.bankroll)
             except Exception as exc:
                 self._log_error("prices/portfolio", exc)
-        else:
-            self.state.setdefault("portfolio", {"available": False, "reason": "no positive-edge candidates"})
+                self.state["portfolio"] = {"available": False, "reason": f"portfolio build failed: {type(exc).__name__}"}
+        else:  # unconditional (not setdefault) so a stale book never lingers when edges vanish
+            self.state["portfolio"] = {"available": False, "reason": "no positive-edge candidates"}
 
         account = load_account(PAPER_ACCOUNT_PATH, self.bankroll)
         account = update_account(
@@ -450,9 +468,14 @@ class LiveEngine:
 
     def job_retrain(self) -> str:
         """Full pipeline refresh: re-train the model + refresh data/backtest/squads, then rebuild context."""
+        prev_live = self.state.get("tracker", {}).get("live")  # preserve in-play snapshot across retrain
         state = run_pipeline(refresh=False, n_sims=self.sim_n, history_years=self.history_years)
         state["config"] = self.config
         self.state = state
+        # Carry forward the live-maintained sections so the UI doesn't blank for a cycle.
+        self.state["equity_curve"] = self._equity_curve
+        if prev_live and isinstance(self.state.get("tracker"), dict):
+            self.state["tracker"].setdefault("live", prev_live)
         self.ctx = build_context(self.config, history_years=self.history_years)
         self.client = LiveScoreClient.from_config(self.config, self.ctx.normalizer)
         self.normalizer = self.ctx.normalizer
@@ -474,7 +497,7 @@ class LiveEngine:
     def _build_elo(self):
         ctx = self.ctx
         assert ctx is not None
-        wc_live = _live_wc_rows(WC_RESULTS_PATH, self.normalizer, ctx.results_full["date"].max())
+        wc_live = _live_wc_rows(WC_RESULTS_PATH, self.normalizer, ctx.results_full["date"].max(), existing=ctx.results_full)
         if wc_live is not None and len(wc_live):
             elo_input = pd.concat([ctx.results_full, wc_live], ignore_index=True, sort=False).sort_values("date")
         else:

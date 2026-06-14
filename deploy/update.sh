@@ -29,7 +29,8 @@ if command -v git >/dev/null 2>&1 && [ ! -d "${APP_DIR}/.git" ]; then
 fi
 
 echo "==> refreshing deps…"
-run_as "${APP_DIR}/.venv/bin/pip" install -q -r "${APP_DIR}/requirements-runtime.txt"
+# Non-fatal: a transient pip/network blip must not skip the service restart below.
+run_as "${APP_DIR}/.venv/bin/pip" install -q -r "${APP_DIR}/requirements-runtime.txt" || echo "==> WARN: dep refresh failed (continuing with existing deps)"
 
 echo "==> (re)installing systemd units…"
 WEB_PORT="$(grep -E '^web_port:' "${APP_DIR}/config.yaml" | grep -oE '[0-9]+' | head -1 || true)"
