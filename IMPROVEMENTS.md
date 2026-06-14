@@ -29,6 +29,22 @@ the next thing.** No human approval required. Pause it any time with
 ---
 <!-- implementer appends below -->
 
+## 2026-06-14 — Flawless audit: 19 verified bugs fixed (Claude + 33-agent workflow)
+Ran an adversarial multi-agent audit (6 auditors × per-finding skeptic verification): 27 raw
+findings, **19 confirmed real** (8 rejected as false positives). All 19 fixed; 67/67 tests green.
+- **HIGH** — paper ledger re-opened already-resolved markets every cycle (NO-side bleed) → skip
+  resolved mids in the deploy loop; USA/Paraguay double-counted in Elo (same fixture in results.csv
+  06-12 + wc2026_results 06-13) → dedup by team-pair within ±5 days; deploy-refit deployed different
+  models in different engines while metrics described a third → explicit `refit_full`, set identically
+  everywhere; auto-deploy `git reset` wiped local commits + never retried a failed update → gate on a
+  deployed-SHA marker.
+- **MED** — atomic paper-ledger save; portfolio no longer goes stale (unconditional reset); knockout
+  rematch no longer collapses with its group game ((date,pair) match); single-instance flock; pip
+  non-fatal in update.sh; implementer commits only the edited file + defaults OFF.
+- **LOW** — retrain keeps the equity curve / in-play snapshot; top-ups mark at mid + blend model_prob
+  (honest equity); favourite KPI no longer double-escapes "Bosnia & Herzegovina"; OOS labelled on date
+  not kickoff datetime; watchdog cooldown persisted across restarts.
+
 ## 2026-06-14 — Proposal "Enhance feature set": tried competitive-only form → REVERTED (Claude)
 - **file:** `src/features/build_features.py`  ·  **area:** features  ·  **status:** reverted (no improvement)
 - Added competitive-matches-only form (ppg / win-rate / goal-diff over last 5 & 10 competitive
