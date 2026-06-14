@@ -1,0 +1,12 @@
+# Slim runtime deps for the live engine + web dashboard on a server.
+# (The full requirements.txt also pulls textual/matplotlib/statsmodels/soccerdata,
+#  which the engine and web app do NOT need at runtime.)
+numpy
+pandas
+scikit-learn
+scipy
+requests
+rich
+pyyaml
+# xgboost  # optional — slightly better 1X2 model on Linux/py3.12 (wheel exists).
+#          # Without it the model falls back to scikit-learn HistGradientBoosting.

@@ -1,0 +1,23 @@
+[Unit]
+Description=World Cup 2026 web dashboard (real-time SSE reader)
+After=network-online.target wc-engine.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__APP_DIR__
+# Bind to localhost only — Caddy terminates TLS + basic auth and proxies to it.
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/web_app.py --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

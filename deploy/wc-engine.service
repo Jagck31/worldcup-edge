@@ -1,0 +1,29 @@
+[Unit]
+Description=World Cup 2026 live edge engine (single writer)
+Documentation=https://github.com/  (worldcup-edge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/live_engine.py --no-ui
+Restart=always
+RestartSec=10
+# First start trains the model + runs an initial sim; give it room.
+TimeoutStartSec=600
+TimeoutStopSec=20
+Environment=PYTHONUNBUFFERED=1
+# Private TheSportsDB key (optional — the public "3" key works without one):
+# Environment=LIVE_API_KEY=your_key_here
+StandardOutput=journal
+StandardError=journal
+# Light hardening (the process only needs its own app dir + network):
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

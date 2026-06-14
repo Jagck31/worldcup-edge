@@ -1,0 +1,44 @@
+bankroll_usd: 10000
+kelly_fraction: 0.5        # half-Kelly — more aggressive paper deployment
+max_single_bet_pct: 0.20
+max_total_exposure_pct: 0.80
+min_edge_pp: 5.0
+min_fillable_usd: 5
+fees_bps: 0
+paper_size_mode: kelly    # 'kelly' = deploy bankroll-Kelly (active); 'fillable' = live-depth (tiny)
+poll_interval_sec: 300
+target_order_size_usd: 10
+live_api_base: https://www.thesportsdb.com/api/v1/json   # live results feed (TheSportsDB)
+live_api_key: "3"          # public free key; override with env LIVE_API_KEY for a private key
+live_league_id: "4429"     # TheSportsDB FIFA World Cup
+live_season: "2026"
+model_type: gbt          # 'gbt' (gradient-boosted trees) or 'mlp' (neural network)
+manual_fixture_path: data/manual/fixtures_2026.csv
+third_place_assignment_path: data/manual/third_place_assignments.csv
+
+# --- Live engine (live_engine.py) cadences — "balanced" profile ---
+engine_price_interval_sec: 60      # live edges + portfolio + paper account
+engine_results_interval_sec: 90    # live results feed + tracker + Elo
+engine_results_live_interval_sec: 30  # faster results polling while any match is in-play
+engine_resim_interval_sec: 900     # re-simulate probabilities (also fires on every new result)
+engine_retrain_interval_sec: 21600 # full model retrain (6h)
+engine_sim_n: 50000                # Monte Carlo iterations per re-sim (fast; full run uses more)
+use_live_markets: true
+web_port: 8000                     # local port the web app binds (Tailscale serve fronts it)
+
+# --- Live results feed window (the free season feed is sparse; poll per-day too) ---
+live_window_start: "2026-06-11"    # tournament bounds — don't poll days outside them
+live_window_end: "2026-07-19"
+live_day_lookback: 6               # eventsday window around "today"
+live_day_lookahead: 2
+
+# --- AI agents (ops_watchdog.py + improver.py) — need OPENAI_API_KEY in .env or env ---
+ops_interval_sec: 120             # watchdog cadence
+ops_restart_cooldown_sec: 600     # min seconds between auto-restarts of a given wc-* service
+ops_model: gpt-4o-mini            # OpenAI model for ops diagnosis
+improver_interval_sec: 7200       # improver cadence (2h) — proposes, reads what's been implemented
+improver_model: gpt-4o-mini
+# Implementer agent — autonomously applies proposals, TEST-GATED + git-revertible.
+implementer_enabled: false        # OFF: Claude is the implementer (reviewed, measured changes)
+implementer_interval_sec: 3600    # attempt one proposal per hour (when re-enabled)
+implementer_model: gpt-4o-mini

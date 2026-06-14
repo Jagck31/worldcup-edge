@@ -1,0 +1,15 @@
+pandas
+numpy
+scikit-learn
+xgboost
+scipy
+statsmodels
+requests
+httpx
+pyyaml
+matplotlib
+python-dateutil
+textual
+textual-serve
+rich
+soccerdata

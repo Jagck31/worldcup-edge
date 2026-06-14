@@ -1,0 +1,22 @@
+# Secrets — NEVER commit (the box keeps its own .env, untracked)
+.env
+*.key
+*.pem
+.venv/
+.uv-cache/
+__pycache__/
+*.pyc
+*.pkl
+*.joblib
+# Runtime results the box accumulates — git-deploy must not clobber them
+data/manual/wc2026_results.csv
+data/raw/*
+data/processed/*
+data/cache/*
+models/*
+reports/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/cache/.gitkeep
+!models/.gitkeep
+!reports/.gitkeep

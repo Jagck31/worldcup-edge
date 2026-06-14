@@ -1,0 +1,33 @@
+# Caddy reverse proxy for the World Cup 2026 dashboard.
+# deploy.sh substitutes __DOMAIN__, __USER__ and __PASSWORD_HASH__ and installs this
+# to /etc/caddy/Caddyfile. Caddy fetches + renews a real Let's Encrypt cert automatically.
+
+__DOMAIN__ {
+	encode zstd gzip
+
+	# One username/password gate in front of everything.
+	# __PASSWORD_HASH__ is a bcrypt hash from `caddy hash-password`.
+	# (Caddy < 2.8 uses the directive name `basicauth` instead of `basic_auth`.)
+	basic_auth {
+		__USER__ __PASSWORD_HASH__
+	}
+
+	# Proxy to the local web app. flush_interval -1 streams Server-Sent Events
+	# (the /events endpoint) immediately instead of buffering them.
+	reverse_proxy 127.0.0.1:8000 {
+		flush_interval -1
+	}
+
+	header {
+		# Sensible security headers for a personal dashboard.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/worldcup.log
+		format console
+	}
+}

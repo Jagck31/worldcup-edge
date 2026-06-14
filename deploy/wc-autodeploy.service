@@ -1,0 +1,11 @@
+[Unit]
+Description=World Cup auto-deploy (git pull + redeploy if the repo changed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__APP_DIR__
+ExecStart=/usr/bin/env bash __APP_DIR__/deploy/wc-autodeploy.sh
+StandardOutput=journal
+StandardError=journal

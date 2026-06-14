@@ -1,0 +1,20 @@
+[Unit]
+Description=World Cup 2026 ops watchdog (health + bounded auto-heal of wc-* services)
+After=network-online.target wc-web.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/ops_watchdog.py
+Restart=always
+RestartSec=15
+Environment=PYTHONUNBUFFERED=1
+# Reads OPENAI_API_KEY from __APP_DIR__/.env (loaded by the script). It restarts only the
+# wc-* services via systemctl, so it is intentionally NOT sandboxed away from systemd.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

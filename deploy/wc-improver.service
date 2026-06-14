@@ -1,0 +1,23 @@
+[Unit]
+Description=World Cup 2026 improver agent (OpenAI — proposes upgrades, never edits/deploys)
+After=network-online.target wc-engine.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/improver.py
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+# Reads OPENAI_API_KEY from __APP_DIR__/.env. Read-only on code: it only writes a backlog
+# (data/processed/improvement_proposals.json + IMPROVEMENT_LOG.md) for human review.
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

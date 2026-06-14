@@ -1,0 +1,21 @@
+[Unit]
+Description=World Cup 2026 implementer agent (autonomously applies improver proposals, test-gated)
+After=network-online.target wc-improver.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/implementer.py
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+# Reads OPENAI_API_KEY from __APP_DIR__/.env. Edits ONLY src/{model,features,simulate,edge,ingest},
+# keeps a change only if the test suite passes, commits to git (revertible). It may `systemctl
+# restart wc-engine` to load an accepted change, so it is not sandboxed from systemd.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
