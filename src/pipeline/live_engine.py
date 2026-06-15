@@ -36,7 +36,8 @@ import pandas as pd
 from edge.portfolio import build_portfolio
 from features.build_features import HOST_NATIONS_2026
 from features.elo import EloConfig, EloEngine
-from ingest.livescores import LiveScoreClient
+from ingest.espn import EspnScoreClient
+from ingest.livescores import LiveScoreClient, merge_event_lists
 from ingest.results import TeamNameNormalizer
 from pipeline.live_tracker import (
     TrackerContext,
@@ -121,6 +122,7 @@ class LiveEngine:
         self.state: dict = {}
         self.ctx: TrackerContext | None = None
         self.client: LiveScoreClient | None = None
+        self.espn: EspnScoreClient | None = None
         self.normalizer = TeamNameNormalizer.from_yaml(ALIASES_PATH)
 
         # Cross-cycle caches so the tight loops stay cheap.
@@ -177,6 +179,7 @@ class LiveEngine:
         self._emit("startup:context")
         self.ctx = build_context(self.config, history_years=self.history_years)
         self.client = LiveScoreClient.from_config(self.config, self.ctx.normalizer)
+        self.espn = EspnScoreClient.from_config(self.config, self.ctx.normalizer) if self.config.get("use_espn", True) else None
         self.normalizer = self.ctx.normalizer
 
         # Seed state: reuse a recent on-disk snapshot for the slow-moving sections (model,
@@ -301,6 +304,13 @@ class LiveEngine:
         """Poll the live results feed, merge finished games, re-score frozen picks, refresh Elo."""
         assert self.ctx is not None and self.client is not None
         events = self.client.fetch_events()
+        # Second source (ESPN) so a game one feed omits is still caught. Merged by team pair +
+        # day, keeping the most-advanced state. A failure here must not sink the results cycle.
+        if self.espn is not None:
+            try:
+                events = merge_event_lists(events, self.espn.fetch_events())
+            except Exception as exc:
+                self._log_error("results/espn", exc)
         deltas = merge_finished_into_csv(events, WC_RESULTS_PATH, self.normalizer)
         # Gap-fill from the git-tracked manual seed: games the free feed never carried
         # (e.g. Australia-Turkiye, Netherlands-Japan, Sweden-Tunisia). Feed always wins.
@@ -487,6 +497,7 @@ class LiveEngine:
             self.state["tracker"].setdefault("live", prev_live)
         self.ctx = build_context(self.config, history_years=self.history_years)
         self.client = LiveScoreClient.from_config(self.config, self.ctx.normalizer)
+        self.espn = EspnScoreClient.from_config(self.config, self.ctx.normalizer) if self.config.get("use_espn", True) else None
         self.normalizer = self.ctx.normalizer
         self._elo = None
         prior = self.state.get("tracker", {}).get("predictions", [])

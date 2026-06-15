@@ -50,6 +50,18 @@ future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
   (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
 - **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
 
+## 2026-06-15 — ESPN second results source: stop missing a game a day (Claude, user-requested)
+- **files:** `src/ingest/espn.py` (new), `src/ingest/livescores.py` (`merge_event_lists`),
+  `src/pipeline/live_engine.py` (merge ESPN in `job_results`), `config.yaml` (`use_espn`). · **tests:** 80→87 green.
+- **Why:** confirmed the free TheSportsDB tier silently omits whole fixtures (it returned 3 of
+  06-14's 5 games), so the tracker missed Australia-Turkiye, Netherlands-Japan, Sweden-Tunisia.
+- **What:** ESPN's free, key-less soccer scoreboard (`site.api.espn.com/.../soccer/fifa.world`)
+  as a second source, parsed to the same `LiveEvent` shape and merged by team-pair+day keeping the
+  most-advanced state. ESPN carries the full slate (24 events vs TheSportsDB's 18 in the smoke
+  test), names canonicalised (Türkiye→Turkey, Ivory Coast→Cote d'Ivoire, USA→United States). The
+  manual seed stays as a last-resort backstop; ESPN should make daily misses a non-issue. Engine
+  `--once` clean: "24 events, 13 scored". Degrades gracefully (ESPN failure can't sink the cycle).
+
 ## 2026-06-15 — Strategy risk: concentration diagnostic + halve single-bet cap (Claude, loop iter)
 - **files:** `src/edge/risk.py` (new `position_risk`), `evaluate.py` (RISK section + headline),
   `config.yaml` (`max_single_bet_pct` 0.20 -> 0.10). · **tests:** 77 -> 80 green.

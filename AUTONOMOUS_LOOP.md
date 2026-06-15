@@ -105,8 +105,9 @@ Each run appends a line to `data/processed/scorecard_history.jsonl` so trends ar
      `load_manual_seed_events`) the engine gap-fills each cycle — covers games the free
      TheSportsDB feed omits entirely (confirmed: Australia–Turkiye, Netherlands–Japan,
      Sweden–Tunisia are not in the feed). Keep the seed populated as the feed misses games.
-   - Still open: a second automated results source (so manual entry isn't the only fallback),
-     and surfacing per-fixture feed coverage on the dashboard.
+   - ✅ done (2026-06-15): ESPN second source (`src/ingest/espn.py`) merged with TheSportsDB by
+     team-pair+day — the free TheSportsDB tier omits whole fixtures; ESPN carries the full slate.
+   - Still open: surfacing per-fixture feed coverage / which source supplied each result on the dashboard.
    - Validate the official 2026 group/schedule CSVs against a public source each retrain.
    - Cache + rate-limit Polymarket calls; detect stale/empty books explicitly.
 

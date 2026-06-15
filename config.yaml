@@ -18,6 +18,11 @@ live_api_base: https://www.thesportsdb.com/api/v1/json   # live results feed (Th
 live_api_key: "3"          # public free key; override with env LIVE_API_KEY for a private key
 live_league_id: "4429"     # TheSportsDB FIFA World Cup
 live_season: "2026"
+# Second results source (ESPN, free, no key) merged with TheSportsDB so a game one feed omits
+# is still caught — the free TheSportsDB tier silently drops whole fixtures.
+use_espn: true
+espn_api_base: https://site.api.espn.com/apis/site/v2/sports/soccer
+espn_league_slug: fifa.world
 model_type: gbt          # 'gbt' (gradient-boosted trees) or 'mlp' (neural network)
 manual_fixture_path: data/manual/fixtures_2026.csv
 third_place_assignment_path: data/manual/third_place_assignments.csv

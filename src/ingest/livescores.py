@@ -216,6 +216,34 @@ class LiveScoreClient:
         return list(events.values())
 
 
+_MERGE_STATE_RANK = {"finished": 3, "in_play": 2, "scheduled": 1, "postponed": 0}
+
+
+def merge_event_lists(*sources: Iterable[LiveEvent]) -> list[LiveEvent]:
+    """Combine events from several providers (TheSportsDB + ESPN), de-duped by team pair + date.
+
+    The same game seen by two sources collapses to one, keeping the most-advanced state (a FT
+    from one provider beats an NS from the other) and, on a tie, the copy that carries scores.
+    Games only one source has are all kept -- that's the whole point of running two feeds. Date
+    is bucketed to the day so a kickoff straddling midnight UTC across sources still matches; a
+    later knockout rematch (different date) stays a separate event."""
+    merged: dict[tuple, LiveEvent] = {}
+    for source in sources:
+        for event in source:
+            key = (event.pair, str(event.date)[:10])
+            current = merged.get(key)
+            if current is None:
+                merged[key] = event
+                continue
+            new_rank = _MERGE_STATE_RANK.get(event.state, 0)
+            cur_rank = _MERGE_STATE_RANK.get(current.state, 0)
+            if new_rank > cur_rank:
+                merged[key] = event
+            elif new_rank == cur_rank and event.home_score is not None and current.home_score is None:
+                merged[key] = event
+    return list(merged.values())
+
+
 def finished_events(events: Iterable[LiveEvent]) -> list[LiveEvent]:
     return [e for e in events if e.finished]
 
