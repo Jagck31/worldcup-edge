@@ -44,7 +44,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <style>
   :root{
     --paper:#f4f1e6; --paper2:#eee9da; --ink:#15160f; --ink2:#3a3b30;
-    --glass:rgba(255,255,255,.46); --glass2:rgba(255,255,255,.66);
+    --glass:rgba(255,255,255,.74); --glass2:rgba(255,255,255,.84);  /* opaque enough to drop per-tile blur (perf) */
     --line:#15160f;            /* hard 1px borders, brutalist */
     --lime:#c8ff00;            /* cyber-neon green accent (fills only) */
     --lime-d:#0a8f4f;          /* readable green for +text */
@@ -66,6 +66,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .b3{width:38vw;height:38vw;left:18vw;bottom:-16vw;background:radial-gradient(circle,#9affd6,transparent 66%);animation:drift1 37s ease-in-out infinite reverse}
   @keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(7vw,5vh) scale(1.12)}}
   @keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-6vw,7vh) scale(1.08)}}
+  /* Respect reduced-motion: freeze the drifting blobs, ticker tape and pulses (perf + a11y). */
+  @media (prefers-reduced-motion: reduce){
+    .blob,.tt,.led.on,.lg .pulse,.tag.live .led,.job .jled.running{animation:none!important}
+    *{scroll-behavior:auto!important}
+  }
   /* global grain overlay */
   .grain{position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.5;mix-blend-mode:multiply;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");}
@@ -146,8 +151,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   @media(max-width:560px){.c2,.c3,.c4,.c5,.c6,.c7,.c8{grid-column:span 12}.r2,.r3{grid-row:span 1}}
 
   /* ---------- panels (liquid glass + hard border, NO shadow) ---------- */
-  .p{position:relative;background:var(--glass);backdrop-filter:blur(13px) saturate(165%);
-    -webkit-backdrop-filter:blur(13px) saturate(165%);border:1px solid var(--line);padding:15px 16px;
+  /* No per-tile backdrop-filter: the blobs are already blurred, so re-blurring the backdrop
+     behind every bento tile each frame (while the blobs drift) was the main scroll-lag source.
+     A near-opaque glass keeps the frosted look at a fraction of the GPU cost. */
+  .p{position:relative;background:var(--glass);border:1px solid var(--line);padding:15px 16px;
     overflow:hidden;transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s,border-color .18s;
     animation:rise .5s cubic-bezier(.2,.8,.2,1) backwards}
   .p:hover{transform:translateY(-3px);background:var(--glass2);border-color:var(--blue)}
@@ -312,7 +319,7 @@ function renderTicker(){
   ((STATE.tracker||{}).predictions||[]).filter(p=>p.status==="completed").slice(-5).reverse()
     .forEach(p=>items.push(`${esc(p.home)} ${esc(p.score||'')} ${esc(p.away)} ${p.correct?'<span class="up">✓</span>':'<span class="dn">✗</span>'}`));
   const live=((STATE.tracker||{}).live||{}).games||[];
-  const liveSpans=live.map(g=>`<span class="ti livetick">⚡ LIVE <b>${esc(g.home)} ${g.home_score}-${g.away_score} ${esc(g.away)}</b> ${esc(g.status)}</span>`);
+  const liveSpans=live.map(g=>`<span class="ti livetick">⚡ LIVE <b>${esc(g.home)} ${g.home_score}-${g.away_score} ${esc(g.away)}</b> ${esc(g.minute||g.status)}</span>`);
   const html=[...liveSpans,...items.map(t=>`<span class="ti">${t}</span>`)].join("");
   $("tape").innerHTML=html+html;   // duplicate for seamless loop
 }
@@ -322,7 +329,7 @@ function renderLive(){const g=((STATE.tracker||{}).live||{}).games||[];const b=$
   b.className="livebanner on";
   b.innerHTML=g.map(x=>`<div class="lg"><span class="pulse"></span>
     <span>${esc(x.home)} <span class="sc">${x.home_score}-${x.away_score}</span> ${esc(x.away)}</span>
-    <span class="min">${esc(x.status)}</span>${x.pick?`<span class="pk">pick ${esc(x.pick)} ${x.pick_prob!=null?pct(x.pick_prob):''}</span>`:''}</div>`).join("");
+    <span class="min">${esc(x.minute||x.status)}</span>${x.pick?`<span class="pk">pick ${esc(x.pick)} ${x.pick_prob!=null?pct(x.pick_prob):''}</span>`:''}</div>`).join("");
 }
 
 /* ---------- KPI bento (in place + flash) ---------- */

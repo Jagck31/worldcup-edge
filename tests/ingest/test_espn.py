@@ -1,7 +1,7 @@
 import unittest
 
 from ingest.espn import EspnScoreClient, _classify
-from ingest.livescores import LiveEvent, merge_event_lists
+from ingest.livescores import LiveEvent, merge_event_lists, _match_minute
 from ingest.results import TeamNameNormalizer
 from pipeline.orchestrator import ALIASES_PATH
 
@@ -37,6 +37,13 @@ class EspnParseTests(unittest.TestCase):
         self.assertEqual(ev.state, "scheduled")
         self.assertIsNone(ev.home_score)
 
+    def test_live_minute_from_espn_displayclock(self):
+        raw = _raw("Belgium", "Egypt", "0", "1", state="in", completed=False, detail="44'", name="STATUS_FIRST_HALF")
+        raw["competitions"][0]["status"]["displayClock"] = "44'"
+        ev = self.client._to_event(raw)
+        self.assertEqual(ev.state, "in_play")
+        self.assertEqual(ev.minute, "44'")
+
     def test_classify_states(self):
         self.assertEqual(_classify("post", True, "STATUS_FULL_TIME"), "finished")
         self.assertEqual(_classify("in", False, "STATUS_FIRST_HALF"), "in_play")
@@ -69,6 +76,22 @@ class MergeEventListsTests(unittest.TestCase):
         group = [self._ev("Spain", "Portugal", 1, 0, "finished", date="2026-06-14")]
         ko = [self._ev("Spain", "Portugal", 0, 2, "finished", date="2026-07-05")]  # knockout rematch
         self.assertEqual(len(merge_event_lists(group, ko)), 2)
+
+    def test_tie_prefers_copy_with_live_minute(self):
+        a = LiveEvent("x", "2026-06-15", "", "Belgium", "Egypt", 0, 1, "2H", "in_play", "")
+        b = LiveEvent("y", "2026-06-15", "", "Belgium", "Egypt", 0, 1, "2H", "in_play", "67'")
+        merged = merge_event_lists([a], [b])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].minute, "67'")
+
+
+class MatchMinuteTests(unittest.TestCase):
+    def test_progress_number_becomes_clock(self):
+        self.assertEqual(_match_minute("67", "2H"), "67'")
+
+    def test_halftime_and_blank(self):
+        self.assertEqual(_match_minute("", "HT"), "HT")
+        self.assertEqual(_match_minute("", "NS"), "")  # not live -> no stray clock
 
 
 if __name__ == "__main__":

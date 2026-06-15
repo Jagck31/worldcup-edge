@@ -48,6 +48,23 @@ def _to_int(value: object) -> int | None:
             return None
 
 
+def _match_minute(progress: str, status: str) -> str:
+    """A human match clock from TheSportsDB's strProgress/strStatus, e.g. "67'" or "HT".
+
+    strProgress carries the live minute as a bare number; strStatus carries phase labels.
+    Returns "" for non-live games so the UI shows the score/result instead of a stray clock.
+    """
+    p = (progress or "").strip().rstrip("'")
+    if p.isdigit():
+        return f"{p}'"
+    s = (status or "").strip().upper()
+    if s in {"HT", "HALFTIME", "HALF TIME", "BREAK"}:
+        return "HT"
+    if s in {"ET", "BT", "P", "PEN", "PEN LIVE"}:
+        return s.replace(" LIVE", "")
+    return ""
+
+
 def _classify(status_raw: str, home_score: int | None, away_score: int | None) -> str:
     status = (status_raw or "").strip().upper()
     if status in _POSTPONED:
@@ -75,6 +92,7 @@ class LiveEvent:
     away_score: int | None
     status_raw: str
     state: str           # finished | in_play | scheduled | postponed
+    minute: str = ""     # live match clock for in-play games, e.g. "67'" (provider-supplied)
 
     @property
     def pair(self) -> frozenset:
@@ -143,6 +161,7 @@ class LiveScoreClient:
             away_score=away_score,
             status_raw=str(raw.get("strStatus", "")),
             state=state,
+            minute=_match_minute(str(raw.get("strProgress", "")), str(raw.get("strStatus", ""))),
         )
 
     _STATE_RANK = {"finished": 3, "in_play": 2, "scheduled": 1, "postponed": 0}
@@ -239,8 +258,12 @@ def merge_event_lists(*sources: Iterable[LiveEvent]) -> list[LiveEvent]:
             cur_rank = _MERGE_STATE_RANK.get(current.state, 0)
             if new_rank > cur_rank:
                 merged[key] = event
-            elif new_rank == cur_rank and event.home_score is not None and current.home_score is None:
-                merged[key] = event
+            elif new_rank == cur_rank:
+                # Same state: prefer the copy with more info — scores first, then a live minute.
+                if event.home_score is not None and current.home_score is None:
+                    merged[key] = event
+                elif (event.home_score is None) == (current.home_score is None) and event.minute and not current.minute:
+                    merged[key] = event
     return list(merged.values())
 
 

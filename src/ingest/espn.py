@@ -86,9 +86,12 @@ class EspnScoreClient:
         away_name = (away.get("team") or {}).get("displayName") or (away.get("team") or {}).get("name")
         if not home_name or not away_name:
             return None
-        status = (comp.get("status") or raw.get("status") or {}).get("type", {})
+        status_obj = comp.get("status") or raw.get("status") or {}
+        status = status_obj.get("type", {})
         state = _classify(str(status.get("state", "")), bool(status.get("completed")), str(status.get("name", "")))
         event_date = str(raw.get("date", ""))[:10]
+        # ESPN gives the live minute in displayClock (e.g. "44'"); only meaningful in-play.
+        minute = str(status_obj.get("displayClock", "")).strip() if state == "in_play" else ""
         return LiveEvent(
             event_id=f"espn:{raw.get('id', '')}",
             date=event_date,
@@ -99,6 +102,7 @@ class EspnScoreClient:
             away_score=_to_int(away.get("score")),
             status_raw=str(status.get("shortDetail") or status.get("detail") or status.get("name", "")),
             state=state,
+            minute=minute,
         )
 
     def _get(self, day: str) -> dict[str, Any]:

@@ -50,6 +50,18 @@ future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
   (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
 - **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
 
+## 2026-06-15 — Live match-minute + dashboard scroll-lag fix (Claude, user-requested)
+- **files:** `src/ingest/livescores.py` (`_match_minute`, `minute` on `LiveEvent`, merge tie-break),
+  `src/ingest/espn.py` (minute from `displayClock`), `src/pipeline/live_engine.py` (minute on live
+  games), `web_app.py` (show minute; drop per-tile backdrop blur). · **tests:** 87→91 green.
+- **Minute:** in-play games showed a clock/phase, not the match minute. Now `LiveEvent.minute`
+  is parsed per source (TheSportsDB `strProgress` → "67'", ESPN `displayClock`), the merge prefers
+  the copy that has a minute, and the banner/ticker render it. Blank for non-live so no stray clock.
+- **Lag:** every bento tile had `backdrop-filter:blur(13px)`, re-blurring the backdrop each frame
+  while 3 blurred blobs drift behind them — the main scroll-jank source. The blobs are already
+  `blur(60px)`, so per-tile backdrop blur was redundant; replaced with a near-opaque glass
+  (`--glass .46→.74`). Added a `prefers-reduced-motion` block that freezes blobs/ticker/pulses.
+
 ## 2026-06-15 — ESPN second results source: stop missing a game a day (Claude, user-requested)
 - **files:** `src/ingest/espn.py` (new), `src/ingest/livescores.py` (`merge_event_lists`),
   `src/pipeline/live_engine.py` (merge ESPN in `job_results`), `config.yaml` (`use_espn`). · **tests:** 80→87 green.

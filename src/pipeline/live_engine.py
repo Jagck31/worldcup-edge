@@ -346,6 +346,7 @@ class LiveEngine:
                 "home": e.home, "away": e.away,
                 "home_score": e.home_score or 0, "away_score": e.away_score or 0,
                 "status": e.status_raw or "LIVE",
+                "minute": e.minute or "",       # live match clock, e.g. "67'"
                 "pick": pick_team, "pick_prob": pk.get("pick_prob"),
             })
         live_games.sort(key=lambda g: (g["home"], g["away"]))
@@ -359,7 +360,7 @@ class LiveEngine:
             "updated_at": _now_iso(),
             "source": f"{self.client.base_url.split('//')[-1].split('/')[0]} ({len(events)} events)",
             "results_fed": result.get("live_results_fed", 0),
-            "in_play": [f"{g['home']} {g['home_score']}-{g['away_score']} {g['away']} ({g['status']})" for g in live_games],
+            "in_play": [f"{g['home']} {g['home_score']}-{g['away_score']} {g['away']} ({g['minute'] or g['status']})" for g in live_games],
             "games": live_games,
             "newly_finished": self._newly_finished,
         }
