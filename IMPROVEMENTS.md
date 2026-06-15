@@ -50,6 +50,18 @@ future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
   (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
 - **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
 
+## 2026-06-15 — Strategy risk: concentration diagnostic + halve single-bet cap (Claude, loop iter)
+- **files:** `src/edge/risk.py` (new `position_risk`), `evaluate.py` (RISK section + headline),
+  `config.yaml` (`max_single_bet_pct` 0.20 -> 0.10). · **tests:** 77 -> 80 green.
+- **Measured the -15% book:** it's 80% deployed but brutally concentrated — top-3 = 49.9% of
+  bankroll, top-5 = 77.5%, one $2,000 (20%) Austria-NO bet, the rest $10 tokens, all settling
+  06-27/07-20 (n_settled=0). Bankroll-Kelly best-edge-first piles into a handful of derived bets.
+- **Change:** scorecard now reports invested/max_single/top3/top5/settle-buckets (+ model
+  expected ROI vs marked) so concentration is tracked every iteration; and the single-bet cap is
+  halved to 10% so no future paper bet can be 20% of the book. Reversible via config; forward-
+  looking (existing positions unchanged, so the headline still shows the legacy 20% until those
+  settle). ROI itself isn't measurable until markets resolve — logged as conservative risk control.
+
 ## 2026-06-15 — Manual-results seed: git-tracked fallback for games the feed omits (Claude)
 - **files:** `src/pipeline/live_tracker.py` (`load_manual_seed_events`, `merge_finished_into_csv(fill_only=)`),
   `src/pipeline/live_engine.py` (merge in `job_results`), `src/pipeline/orchestrator.py`

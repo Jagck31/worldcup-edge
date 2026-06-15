@@ -142,15 +142,19 @@ def tracker_scorecard(state: dict) -> dict:
 # --------------------------------------------------------------------------- trading
 
 def trading_scorecard(state: dict, config: dict) -> dict:
+    from edge.risk import position_risk
     from pipeline.orchestrator import PAPER_ACCOUNT_PATH
 
     bankroll = float(config.get("bankroll_usd", 10000))
-    summ = {}
+    summ, positions = {}, []
     try:
         acct = json.loads(PAPER_ACCOUNT_PATH.read_text(encoding="utf-8"))
         summ = acct.get("summary", {})
+        positions = acct.get("positions", []) or []
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        summ = (state.get("paper_account") or {}).get("summary", {})
+        pa = state.get("paper_account") or {}
+        summ = pa.get("summary", {})
+        positions = pa.get("positions", []) or []
 
     equity = summ.get("equity")
     roi_pct = round((equity - bankroll) / bankroll * 100, 3) if equity is not None and bankroll else None
@@ -163,13 +167,14 @@ def trading_scorecard(state: dict, config: dict) -> dict:
         "start_bankroll_usd": bankroll,
         "equity_usd": equity,
         "roi_pct": roi_pct,
+        "expected_roi_pct": summ.get("expected_roi_pct"),  # the model's view if its probs are right
         "realized_pnl_usd": summ.get("realized_pnl"),
         "unrealized_pnl_usd": summ.get("unrealized_pnl"),
-        "deployed_usd": summ.get("deployed") or summ.get("cost_basis"),
-        "exposure_pct": summ.get("exposure_pct"),
-        "n_open_positions": summ.get("open_positions") or summ.get("n_positions"),
+        "invested_usd": summ.get("invested") or summ.get("deployed"),
+        "n_open_positions": summ.get("n_open") or summ.get("open_positions"),
         "n_edges": len(slate),
         "n_actionable": len(actionable),
+        "risk": position_risk(positions, bankroll),
     }
 
 
@@ -324,11 +329,15 @@ def print_report(card: dict) -> None:
     tr = card["trading"]
     p("\n[TRADING] paper book   source=%s" % tr.get("source"))
     if tr.get("available"):
-        p("  equity=$%s  ROI=%s%%  realized=$%s  unrealized=$%s"
+        p("  equity=$%s  ROI=%s%%  (model expects %s%%)  unrealized=$%s"
           % (_fmt(tr.get("equity_usd"), 2), _fmt(tr.get("roi_pct"), 3),
-             _fmt(tr.get("realized_pnl_usd"), 2), _fmt(tr.get("unrealized_pnl_usd"), 2)))
+             _fmt(tr.get("expected_roi_pct"), 1), _fmt(tr.get("unrealized_pnl_usd"), 2)))
         p("  edges=%s  actionable=%s  open_positions=%s"
           % (tr.get("n_edges"), tr.get("n_actionable"), tr.get("n_open_positions")))
+        rk = tr.get("risk", {})
+        p("  RISK: invested=%s%%  max_single=%s%%  top3=%s%%  top5=%s%%  settle_buckets=%s   <-- concentration"
+          % (_fmt(rk.get("invested_pct"), 1), _fmt(rk.get("max_position_pct"), 1),
+             _fmt(rk.get("top3_pct"), 1), _fmt(rk.get("top5_pct"), 1), rk.get("n_settle_buckets")))
     else:
         p("  unavailable")
 
@@ -390,6 +399,8 @@ def _headline(card: dict) -> dict:
         "tracker_logloss": t.get("log_loss"),
         "tracker_acc": t.get("accuracy"),
         "roi_pct": card["trading"].get("roi_pct"),
+        "max_position_pct": (card["trading"].get("risk") or {}).get("max_position_pct"),
+        "top3_pct": (card["trading"].get("risk") or {}).get("top3_pct"),
         "n_extreme_disagreement": card["strategy"].get("n_extreme_disagreement"),
         "market_mapping_rate": card["data"].get("market_mapping_rate"),
     }

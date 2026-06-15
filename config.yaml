@@ -1,6 +1,7 @@
 bankroll_usd: 10000
 kelly_fraction: 0.5        # half-Kelly — more aggressive paper deployment
-max_single_bet_pct: 0.20
+max_single_bet_pct: 0.10    # risk control: no single paper bet > 10% of bankroll (was 0.20 — the
+                            # book had concentrated ~50% into its top 3 derived-market bets)
 max_total_exposure_pct: 0.80
 min_edge_pp: 5.0
 # Derived-market humility shrinkage (src/edge/shrink.py): blend simulated champion/group-winner
