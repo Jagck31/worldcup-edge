@@ -23,6 +23,14 @@ def position_risk(positions: Sequence[Mapping], bankroll: float) -> dict:
         settle = str(p.get("settle_date") or "")[:10]
         buckets[settle] = buckets.get(settle, 0.0) + float(p.get("stake") or 0.0)
 
+    # Per-underlying-market exposure (correlation bucket): all contracts on one event resolve
+    # together, so this is the real concentration the single-bet cap misses.
+    by_market: dict[str, float] = {}
+    for p in positions:
+        mk = str(p.get("market") or "")
+        by_market[mk] = by_market.get(mk, 0.0) + float(p.get("stake") or 0.0)
+    top_market = max(by_market.items(), key=lambda kv: kv[1], default=("", 0.0))
+
     return {
         "n_open": len(positions),
         "invested_usd": round(total, 2),
@@ -30,6 +38,9 @@ def position_risk(positions: Sequence[Mapping], bankroll: float) -> dict:
         "max_position_pct": pct(stakes[0]) if stakes else 0.0,
         "top3_pct": pct(sum(stakes[:3])),
         "top5_pct": pct(sum(stakes[:5])),
+        "max_market_pct": pct(top_market[1]),
+        "max_market": top_market[0],
+        "market_exposure": {k: round(v, 2) for k, v in sorted(by_market.items(), key=lambda kv: -kv[1])},
         "settle_buckets": {k: round(v, 2) for k, v in sorted(buckets.items())},
         "n_settle_buckets": len([k for k in buckets if k]),
     }

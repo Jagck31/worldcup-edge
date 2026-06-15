@@ -50,6 +50,29 @@ future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
   (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
 - **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
 
+## 2026-06-15 — Strategy risk: per-underlying-market exposure cap (Claude, loop iter)
+- **files:** `src/pipeline/paper_account.py` (`max_market_exposure_pct` in `update_account`),
+  `src/edge/risk.py` (`max_market_pct`/`max_market`/`market_exposure`), `config.yaml`
+  (`max_market_exposure_pct: 0.20`), `live_engine.py`+`orchestrator.py` (wire it through),
+  `evaluate.py` (RISK line + headline). · **tests:** 93→98 green (4 cap + 1 diagnostic).
+- **Root cause of the −15%:** the deployer sizes best-edge-first under a *single-bet* cap and a
+  *total* cap, but **nothing bounded per-underlying-event exposure**. So the book stacked
+  YES-favourite ($2,000) **and** NO-longshot ($1,416) in **Win Group J** = **34% of bankroll on
+  one group's outcome** — two positively-correlated contracts (both win iff the favourite
+  dominates J) counted as independent. Group E similarly held $2,816. That correlation is the
+  top3=49.9% concentration, and most of the mark-to-market drawdown. A good correlation-aware
+  allocator (`edge/portfolio.py`, `group_cap=0.25`) already existed but was never wired into the
+  paper-account deploy path.
+- **Change:** `update_account` now caps aggregate stake per market bucket (the `market` field —
+  all "Win Group J"/"Champion" contracts share one cap), seeded from existing positions so
+  top-ups respect it too. `max_market_exposure_pct: 0.20` (1.0 = disabled = old behaviour).
+  `position_risk` now reports `max_market_pct` so the scorecard tracks the real concentration —
+  it reads **34.2% (Win Group J)**, above the 20% single-bet view, confirming the hidden risk.
+- **Verdict:** clearly-correct, reversible risk control (config knob). **Forward-looking** — the
+  deployer never sells down a marked position, so the legacy J/E stacks persist until they settle
+  (06-27); the cap prevents *new* over-concentration and the book will converge toward ≤20%/market
+  as positions resolve and redeploy. ROI not yet measurable (n_settled=0). Engine `--once` clean.
+
 ## 2026-06-15 — Elo visibility: per-match swing + 24h rank-movement arrows (Claude, user-requested)
 - **files:** `src/features/elo.py` (`EloHistory.match_delta`), `src/pipeline/live_tracker.py`
   (attach `elo_delta_home/away` to completed games), `src/pipeline/live_engine.py`

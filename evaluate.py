@@ -338,6 +338,8 @@ def print_report(card: dict) -> None:
         p("  RISK: invested=%s%%  max_single=%s%%  top3=%s%%  top5=%s%%  settle_buckets=%s   <-- concentration"
           % (_fmt(rk.get("invested_pct"), 1), _fmt(rk.get("max_position_pct"), 1),
              _fmt(rk.get("top3_pct"), 1), _fmt(rk.get("top5_pct"), 1), rk.get("n_settle_buckets")))
+        p("        max_market=%s%% (%s)   <-- correlated-event exposure (per-market cap)"
+          % (_fmt(rk.get("max_market_pct"), 1), rk.get("max_market") or "-"))
     else:
         p("  unavailable")
 
@@ -401,6 +403,7 @@ def _headline(card: dict) -> dict:
         "roi_pct": card["trading"].get("roi_pct"),
         "max_position_pct": (card["trading"].get("risk") or {}).get("max_position_pct"),
         "top3_pct": (card["trading"].get("risk") or {}).get("top3_pct"),
+        "max_market_pct": (card["trading"].get("risk") or {}).get("max_market_pct"),
         "n_extreme_disagreement": card["strategy"].get("n_extreme_disagreement"),
         "market_mapping_rate": card["data"].get("market_mapping_rate"),
     }

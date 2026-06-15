@@ -94,9 +94,14 @@ Each run appends a line to `data/processed/scorecard_history.jsonl` so trends ar
      `market_blend_weight`). Tune the weight as group/champion markets resolve: compare raw
      model vs de-vigged market vs blend calibration on settled markets, set weight to the
      realised optimum.
+   - ✅ done (2026-06-15): **per-underlying-market exposure cap** (`max_market_exposure_pct: 0.20`,
+     wired into `paper_account.update_account`; `risk.max_market_pct` tracks it). The deployer's
+     single-bet + total caps left per-event exposure unbounded, so the book stacked YES-favourite +
+     NO-longshot in one group to 34% of bankroll (correlated, counted as independent) — the real
+     driver of top3=49.9%. Forward-looking (no forced sell-down); converges as positions settle.
    - Reconsider deploying ~80% of bankroll into long-dated derived markets (champion/group
      resolve weeks out, capital locked, marked-to-market drawdowns). Consider favouring
-     near-dated match markets, an EV-per-day-locked ranking, or a lower exposure cap.
+     near-dated match markets, an EV-per-day-locked ranking, or a lower total exposure cap.
    - Add a real two-sided/vig sanity gate: if both YES and NO "show edge," that's model-vs-
      whole-market, not arb — treat with suspicion.
 

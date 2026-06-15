@@ -58,6 +58,7 @@ def update_account(
     size_mode: str = "fillable",
     max_total_exposure_pct: float = 0.80,
     min_stake_usd: float = 5.0,
+    max_market_exposure_pct: float = 1.0,
 ) -> dict:
     """Settle/mark/deploy the paper book.
 
@@ -68,6 +69,12 @@ def update_account(
                      whose point is to show the strategy at full size; it assumes fills it
                      couldn't actually get on a thin book (a deliberate paper-only choice).
     Positions are topped up toward their target each cycle, best edge first, under the cap.
+
+    ``max_market_exposure_pct`` bounds aggregate stake per *underlying market*. Every contract
+    that resolves from the same event ("Win Group J" YES + NO + each team, all of "Champion")
+    is correlated, so the per-bet cap alone lets the book pile a third of the bankroll onto one
+    group's outcome (best-edge-first stacks YES-favourite + NO-longshot, which win/lose together).
+    This caps the bucket. 1.0 disables it (old behaviour); the bucket key is the ``market`` field.
     """
     if account.get("created_at") is None:
         account["created_at"] = now_iso
@@ -110,7 +117,14 @@ def update_account(
     # topping up existing positions toward their target and opening new ones, under the cap.
     pos_by_key = {(p["market_id"], p["side"]): p for p in account["positions"]}
     exposure_cap = account["starting_bankroll"] * max_total_exposure_pct
+    market_cap = account["starting_bankroll"] * max_market_exposure_pct
     invested_now = round(sum(p["stake"] for p in account["positions"]), 2)
+    # Aggregate stake already committed per underlying market (correlation bucket), seeded
+    # from existing positions so top-ups respect the same cap as fresh opens.
+    invested_by_market: dict[str, float] = {}
+    for p in account["positions"]:
+        mk = str(p.get("market") or "")
+        invested_by_market[mk] = invested_by_market.get(mk, 0.0) + float(p.get("stake") or 0.0)
     for row in sorted(slate, key=lambda r: -(r.get("edge_pp") or 0.0)):
         if not row.get("actionable"):
             continue
@@ -129,13 +143,21 @@ def update_account(
         key = (row.get("market_id"), str(row.get("side", "YES")))
         held = pos_by_key.get(key)
         held_stake = held["stake"] if held else 0.0
+        market_name = str(row.get("market") or "")
+        market_spent = invested_by_market.get(market_name, 0.0)
         # only ADD toward the target; never sell down on a marked-up entry
-        delta = min(target - held_stake, max(0.0, exposure_cap - invested_now), account["cash"])
+        delta = min(
+            target - held_stake,
+            max(0.0, exposure_cap - invested_now),       # total-book cap
+            max(0.0, market_cap - market_spent),         # per-underlying-market (correlation) cap
+            account["cash"],
+        )
         if delta < min_stake_usd:
             continue
         add_shares = delta / price
         account["cash"] = round(account["cash"] - delta, 2)
         invested_now = round(invested_now + delta, 2)
+        invested_by_market[market_name] = round(market_spent + delta, 2)
         if held:
             new_shares = round(held["shares"] + add_shares, 1)
             # share-weighted blend of model_prob so old shares aren't retro-revalued

@@ -21,6 +21,18 @@ class PositionRiskTests(unittest.TestCase):
         self.assertEqual(r["n_settle_buckets"], 2)
         self.assertEqual(r["settle_buckets"]["2026-06-27"], 4500.0)
 
+    def test_per_market_exposure(self):
+        # Two correlated contracts in Group J = the real concentration the single-bet cap misses.
+        positions = [
+            {"stake": 2000, "market": "Win Group J", "settle_date": "2026-06-27T00:00:00Z"},
+            {"stake": 1400, "market": "Win Group J", "settle_date": "2026-06-27T00:00:00Z"},
+            {"stake": 1500, "market": "Win Group E", "settle_date": "2026-06-27T00:00:00Z"},
+        ]
+        r = position_risk(positions, bankroll=10000)
+        self.assertEqual(r["max_market"], "Win Group J")
+        self.assertEqual(r["max_market_pct"], 34.0)        # (2000+1400)/10000 > the 20% single-bet view
+        self.assertEqual(r["market_exposure"]["Win Group J"], 3400.0)
+
     def test_empty_book(self):
         r = position_risk([], bankroll=10000)
         self.assertEqual(r["n_open"], 0)

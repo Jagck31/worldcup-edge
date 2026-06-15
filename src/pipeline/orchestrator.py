@@ -1012,6 +1012,7 @@ def run_pipeline(
             size_mode=str(config.get("paper_size_mode", "kelly")),
             max_total_exposure_pct=float(config.get("max_total_exposure_pct", 0.80)),
             min_stake_usd=float(config.get("min_fillable_usd", 5)),
+            max_market_exposure_pct=float(config.get("max_market_exposure_pct", 1.0)),
         )
         save_account(account, PAPER_ACCOUNT_PATH)
         state["paper_account"] = account

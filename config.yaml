@@ -3,6 +3,11 @@ kelly_fraction: 0.5        # half-Kelly — more aggressive paper deployment
 max_single_bet_pct: 0.10    # risk control: no single paper bet > 10% of bankroll (was 0.20 — the
                             # book had concentrated ~50% into its top 3 derived-market bets)
 max_total_exposure_pct: 0.80
+# Per-underlying-market exposure cap (src/pipeline/paper_account.py): all contracts that resolve
+# from one event ("Win Group J" YES+NO+every team, all of "Champion") are correlated, so the
+# single-bet cap alone let the book stack ~34% of bankroll onto one group (YES-favourite +
+# NO-longshot win/lose together). Bound aggregate stake per market bucket. 1.0 = disabled.
+max_market_exposure_pct: 0.20
 min_edge_pp: 5.0
 # Derived-market humility shrinkage (src/edge/shrink.py): blend simulated champion/group-winner
 # probabilities this fraction toward the de-vigged Polymarket book before detecting edges, so a
