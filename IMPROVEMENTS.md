@@ -50,6 +50,19 @@ future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
   (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
 - **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
 
+## 2026-06-15 — Elo visibility: per-match swing + 24h rank-movement arrows (Claude, user-requested)
+- **files:** `src/features/elo.py` (`EloHistory.match_delta`), `src/pipeline/live_tracker.py`
+  (attach `elo_delta_home/away` to completed games), `src/pipeline/live_engine.py`
+  (`_attach_rank_movement` + daily rank snapshot), `web_app.py` (render swing + arrows). · **tests:** 91→93.
+- **Why:** the Elo *was* updating correctly (Spain −15.8 for the Cape Verde draw) but you couldn't
+  see it — Spain stayed #1, so it looked frozen. Now the change is visible.
+- **Per-match swing:** completed tracker rows show each side's Elo delta (verified live:
+  Spain 0-0 Cape Verde → Spain −15.8 / Cape Verde +15.8; Sweden 5-1 Tunisia → +52.6 / −52.6).
+- **Rank arrows:** the engine snapshots leaderboard ranks once/day (elo_rank_history.json,
+  box-local) and annotates each team with `rank_delta` vs the prior day; the Elo list shows ▲/▼N
+  (None until a day passes). Reinforces the "everything connected" chain — these ratings are the
+  same ones that drive the champion/group simulation.
+
 ## 2026-06-15 — Live match-minute + dashboard scroll-lag fix (Claude, user-requested)
 - **files:** `src/ingest/livescores.py` (`_match_minute`, `minute` on `LiveEvent`, merge tie-break),
   `src/ingest/espn.py` (minute from `displayClock`), `src/pipeline/live_engine.py` (minute on live

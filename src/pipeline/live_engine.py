@@ -367,7 +367,8 @@ class LiveEngine:
         # Adaptive cadence: tighten the results loop while anything is live, relax otherwise.
         self.jobs["results"].interval = self._results_live if live_games else self._results_base
         elo_state = self.state.setdefault("elo", {})
-        elo_state["leaderboard"] = result["elo_leaderboard"][:60]
+        leaderboard = self._attach_rank_movement(result["elo_leaderboard"])
+        elo_state["leaderboard"] = leaderboard[:60]
         elo_state["live_results_fed"] = result.get("live_results_fed", 0)
         elo_state["n_teams_rated"] = len(result["elo_leaderboard"])
 
@@ -524,6 +525,39 @@ class LiveEngine:
         else:
             elo_input = ctx.results_full
         return EloEngine(EloConfig()).process_matches(elo_input, host_nations=HOST_NATIONS_2026)
+
+    def _attach_rank_movement(self, leaderboard: list[dict]) -> list[dict]:
+        """Annotate each Elo entry with its rank + 24h rank change (+ = climbed), and snapshot.
+
+        We keep one rank snapshot per day in elo_rank_history.json (box-local, survives restarts).
+        Movement compares today's rank to the most recent *prior-day* snapshot, so the arrow means
+        "since yesterday". First day has no prior -> rank_delta None (no arrow until a day passes).
+        """
+        path = STATE_PATH.parent / "elo_rank_history.json"
+        today = datetime.now(timezone.utc).date().isoformat()
+        cur = {row["team"]: i + 1 for i, row in enumerate(leaderboard)}
+        try:
+            hist = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(hist, list):
+                hist = []
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            hist = []
+        prior = next((h for h in reversed(hist) if h.get("date") != today), None)
+        prior_ranks = (prior or {}).get("ranks", {})
+        for i, row in enumerate(leaderboard):
+            row["rank"] = i + 1
+            pr = prior_ranks.get(row["team"])
+            row["rank_delta"] = (int(pr) - (i + 1)) if isinstance(pr, (int, float)) else None
+        hist = [h for h in hist if h.get("date") != today]
+        hist.append({"date": today, "ranks": cur})
+        hist = hist[-10:]
+        try:
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(hist), encoding="utf-8")
+            tmp.replace(path)
+        except OSError:
+            pass
+        return leaderboard
 
     # ----- persistence -----------------------------------------------------------------
 

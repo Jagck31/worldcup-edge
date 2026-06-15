@@ -397,12 +397,14 @@ function tradeRow(r){const cl=r.side==="NO"?"no":"buy";return `<div class="row">
   <div class="meta"><span>Model <b>${pct(r.model_prob)}</b></span><span>Price <b>${num(r.exec_price,3)}</b></span>
     <span>EV/$ <b>${num(r.ev_per_dollar,2)}</b></span><span>Size <b>${money(r.kelly_size_usd||r.capped_size_usd)}</b></span>
     ${r.risk_label?`<span>${esc(r.risk_label)}</span>`:""}</div></div></div>`;}
+function eloD(x){if(x==null)return"";const s=(x>0?"+":"")+Number(x).toFixed(1);return `<span class="${x>0?'pos':(x<0?'neg':'')}">${s}</span>`;}
 function trackRow(p){const cty=p.pick==="H"?p.home:p.pick==="A"?p.away:"Draw";
   const badge=p.status==="completed"?`<span class="tag ${p.correct?'win':'loss'}">${p.correct?'✓':'✗'} ${esc(p.score||'')}</span>`:`<span class="tag">${esc(p.kickoff||p.date||'')}</span>`;
+  const elo=(p.elo_delta_home!=null||p.elo_delta_away!=null)?`<span>Elo <b>${esc(p.home)}</b> ${eloD(p.elo_delta_home)} · <b>${esc(p.away)}</b> ${eloD(p.elo_delta_away)}</span>`:'';
   return `<div class="row"><div style="flex:1;min-width:0">
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="nm">${esc(p.home)} <span class="muted">v</span> ${esc(p.away)}</span>${badge}</div>
     <div class="meta"><span>Pick <b>${esc(cty)}</b> ${pct(p.pick_prob)}</span><span>xG <b>${num(p.exp_home_goals,1)}–${num(p.exp_away_goals,1)}</b></span>
-      <span>Likely <b>${esc(p.likely_score||'')}</b></span>${p.out_of_sample?'<span class="tag act">OOS</span>':''}</div></div></div>`;}
+      <span>Likely <b>${esc(p.likely_score||'')}</b></span>${elo}${p.out_of_sample?'<span class="tag act">OOS</span>':''}</div></div></div>`;}
 function bar(name,val,frac,extra){return `<div class="barwrap"><div class="barhead"><span class="nm">${name}</span><span class="v">${val}</span></div>
   <div class="track"><div class="fill" style="width:${Math.max(2,frac*100).toFixed(1)}%"></div></div>${extra?`<div class="extra">${extra}</div>`:""}</div>`;}
 
@@ -498,10 +500,12 @@ function renderModel(){const m=STATE.model||{},cal=m.calibration||{};const imp=(
   h+=tag("Top features")+imp.map(f=>bar(esc(f.feature),num(f.importance,3),f.importance/mxv)).join("");
   $("sec-model").innerHTML=h;}
 
+function rankArrow(d){if(d==null)return"";if(d===0)return ` <span class="muted" title="no change in 24h">–</span>`;
+  const up=d>0;return ` <span class="${up?'pos':'neg'}" title="${up?'up':'down'} ${Math.abs(d)} in 24h">${up?'▲':'▼'}${Math.abs(d)}</span>`;}
 function renderElo(){const e=STATE.elo||{},lb=(e.leaderboard||[]).slice(0,32);
   const mx=lb.length?lb[0].rating:1,mn=lb.length?lb[lb.length-1].rating:0;
   let h=tag(`Elo · ${e.n_teams_rated||lb.length} teams${e.live_results_fed?` · ${e.live_results_fed} live fed`:""}`,STATE.generated_at);
-  h+=lb.map((t,i)=>bar(`<span class="muted mono">${i+1}.</span> ${esc(t.team)}`,Math.round(t.rating),(t.rating-mn)/((mx-mn)||1))).join("");
+  h+=lb.map((t,i)=>bar(`<span class="muted mono">${i+1}.</span> ${esc(t.team)}${rankArrow(t.rank_delta)}`,Math.round(t.rating),(t.rating-mn)/((mx-mn)||1))).join("");
   $("sec-elo").innerHTML=h;}
 
 function renderNotes(){const m=STATE.markets||{},ex=STATE.execution||{},d=STATE.data||{};

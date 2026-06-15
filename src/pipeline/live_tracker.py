@@ -180,6 +180,17 @@ def recompute(
 
     predictions = predict_fixtures(fixtures, fix_features, context.predictor, context.goal_model, context.feature_columns)
     predictions = _apply_freeze(predictions, frozen, in_play_pairs)
+    # Attach the per-match Elo swing to finished games (post - pre for each side) so the tracker
+    # can show *why* the ratings moved -- e.g. a favourite that only drew a minnow shedding points.
+    for row in predictions:
+        if row.get("status") != "completed":
+            continue
+        dh = elo.match_delta(str(row.get("home")), row.get("date"))
+        da = elo.match_delta(str(row.get("away")), row.get("date"))
+        if dh is not None:
+            row["elo_delta_home"] = round(dh, 1)
+        if da is not None:
+            row["elo_delta_away"] = round(da, 1)
     scorecard = score_tracker(predictions)
     leaderboard = sorted(
         ({"team": team, "rating": round(rating, 1)} for team, rating in elo.final_ratings.items()),

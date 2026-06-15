@@ -55,6 +55,26 @@ class EloHistory:
     def current_rating(self, team: str) -> float:
         return float(self.final_ratings.get(team, self.base_rating))
 
+    def match_delta(self, team: str, date: pd.Timestamp, tol_days: int = 3) -> float | None:
+        """Rating change (post - pre) the team got from its match on/near ``date``.
+
+        Matched to the team's nearest stored match within ``tol_days`` so a result dated a day
+        off from the schedule fixture (provider timezones) still lines up. Returns None if the
+        team has no match in range -- the UI then simply shows no delta.
+        """
+        team_dates = self.dates.get(team)
+        if not team_dates:
+            return None
+        target = pd.Timestamp(date)
+        best_i, best_gap = None, None
+        for i, d in enumerate(team_dates):
+            gap = abs((d - target).days)
+            if best_gap is None or gap < best_gap:
+                best_gap, best_i = gap, i
+        if best_i is None or best_gap > tol_days:
+            return None
+        return float(self.post_ratings[team][best_i] - self.pre_ratings[team][best_i])
+
     def pre_match_rating(self, team: str, date: pd.Timestamp) -> float:
         date = pd.Timestamp(date)
         team_dates = self.dates.get(team)

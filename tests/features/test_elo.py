@@ -29,6 +29,36 @@ class EloTests(unittest.TestCase):
         self.assertGreater(history.current_rating("Ecuador"), 1500.0)
         self.assertLess(history.current_rating("Qatar"), 1500.0)
 
+    def test_match_delta_reports_per_match_swing(self):
+        matches = pd.DataFrame(
+            [{"date": pd.Timestamp("2026-06-15"), "home_team": "Spain", "away_team": "Cape Verde",
+              "home_score": 0, "away_score": 0, "tournament": "FIFA World Cup", "neutral": True}]
+        )
+        # Spain starts well above Cape Verde, so a draw should cost Spain rating.
+        engine = EloEngine(EloConfig(base_rating=1500.0))
+        hist = engine.process_matches(matches)
+        # seed unequal priors by processing a prior match isn't needed; equal priors -> draw delta 0.
+        d_home = hist.match_delta("Spain", pd.Timestamp("2026-06-15"))
+        d_away = hist.match_delta("Cape Verde", pd.Timestamp("2026-06-15"))
+        self.assertIsNotNone(d_home)
+        self.assertAlmostEqual(d_home, -d_away, places=6)  # symmetric swing
+        # tolerance window: a result dated a day off the query still matches
+        self.assertIsNotNone(hist.match_delta("Spain", pd.Timestamp("2026-06-16")))
+        # a team with no match in range -> None
+        self.assertIsNone(hist.match_delta("Brazil", pd.Timestamp("2026-06-15")))
+
+    def test_match_delta_draw_vs_weaker_team_is_negative(self):
+        matches = pd.DataFrame(
+            [
+                {"date": pd.Timestamp("2026-06-01"), "home_team": "Spain", "away_team": "Spain B",
+                 "home_score": 5, "away_score": 0, "tournament": "Friendly", "neutral": True},
+                {"date": pd.Timestamp("2026-06-15"), "home_team": "Spain", "away_team": "Minnow",
+                 "home_score": 1, "away_score": 1, "tournament": "FIFA World Cup", "neutral": True},
+            ]
+        )
+        hist = EloEngine(EloConfig()).process_matches(matches)
+        self.assertLess(hist.match_delta("Spain", pd.Timestamp("2026-06-15")), 0)  # favourite drops on a draw
+
     def test_elo_neutral_matches_do_not_apply_home_advantage(self):
         neutral_matches = pd.DataFrame(
             [
