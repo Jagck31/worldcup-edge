@@ -101,9 +101,12 @@ Each run appends a line to `data/processed/scorecard_history.jsonl` so trends ar
      whole-market, not arb — treat with suspicion.
 
 **C. Data flowing in.**
-   - TheSportsDB free feed coverage: 48-team tournament, feed sometimes lags/omits games
-     (Australia–Türkiye historically absent). Add a second results source or a manual-entry
-     fallback that the engine merges; surface per-fixture feed coverage on the dashboard.
+   - ✅ done (2026-06-15): git-tracked manual-results seed (`data/manual/manual_results_seed.csv`,
+     `load_manual_seed_events`) the engine gap-fills each cycle — covers games the free
+     TheSportsDB feed omits entirely (confirmed: Australia–Turkiye, Netherlands–Japan,
+     Sweden–Tunisia are not in the feed). Keep the seed populated as the feed misses games.
+   - Still open: a second automated results source (so manual entry isn't the only fallback),
+     and surfacing per-fixture feed coverage on the dashboard.
    - Validate the official 2026 group/schedule CSVs against a public source each retrain.
    - Cache + rate-limit Polymarket calls; detect stale/empty books explicitly.
 

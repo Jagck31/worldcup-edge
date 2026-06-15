@@ -42,11 +42,13 @@ from pipeline.live_tracker import (
     TrackerContext,
     build_context,
     frozen_from_predictions,
+    load_manual_seed_events,
     merge_finished_into_csv,
     recompute,
 )
 from pipeline.orchestrator import (
     ALIASES_PATH,
+    MANUAL_RESULTS_SEED_PATH,
     PAPER_ACCOUNT_PATH,
     SIM_OUTCOMES_PATH,
     STATE_PATH,
@@ -300,6 +302,13 @@ class LiveEngine:
         assert self.ctx is not None and self.client is not None
         events = self.client.fetch_events()
         deltas = merge_finished_into_csv(events, WC_RESULTS_PATH, self.normalizer)
+        # Gap-fill from the git-tracked manual seed: games the free feed never carried
+        # (e.g. Australia-Turkiye, Netherlands-Japan, Sweden-Tunisia). Feed always wins.
+        seed_events = load_manual_seed_events(MANUAL_RESULTS_SEED_PATH, self.normalizer)
+        if seed_events:
+            seed_deltas = merge_finished_into_csv(seed_events, WC_RESULTS_PATH, self.normalizer, fill_only=True)
+            if seed_deltas.get("new"):
+                deltas["new"] = deltas.get("new", []) + seed_deltas["new"]
         in_play_pairs = {e.pair for e in events if e.in_play}
         result = recompute(self.ctx, self._frozen, in_play_pairs, refresh_forward=True)
         self._elo = result.get("elo")  # reuse for the next simulate without rebuilding

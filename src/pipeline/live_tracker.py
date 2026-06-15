@@ -20,7 +20,7 @@ import pandas as pd
 
 from features.build_features import HOST_NATIONS_2026, build_match_features
 from features.elo import EloConfig, EloEngine
-from ingest.livescores import LiveEvent
+from ingest.livescores import LiveEvent, _to_int
 from ingest.results import TeamNameNormalizer, load_results
 from model.goal_model import PoissonGoalModel
 from model.predict import CalibratedPredictor
@@ -196,7 +196,7 @@ def recompute(
 
 
 def merge_finished_into_csv(
-    events: list[LiveEvent], csv_path: Path, normalizer: TeamNameNormalizer
+    events: list[LiveEvent], csv_path: Path, normalizer: TeamNameNormalizer, fill_only: bool = False
 ) -> dict:
     """Insert newly-finished feed results into the results CSV; preserve hand-set xG.
 
@@ -205,6 +205,10 @@ def merge_finished_into_csv(
     them, silently losing one real result from the Elo feed). Existing rows keep their xG unless
     the feed reports a different score, in which case the score is updated and the stale xG
     dropped. Returns the new/changed deltas for alerting.
+
+    ``fill_only=True`` is gap-fill mode for the manual seed: only games the CSV doesn't already
+    have are appended; an existing (feed-sourced) result is never overwritten. That keeps the
+    real feed authoritative and stops a stale hand-entered score from flip-flopping with the feed.
     """
     finished = [e for e in events if e.finished]
     if csv_path.exists():
@@ -244,6 +248,8 @@ def merge_finished_into_csv(
             new.append(event)
             index.setdefault(event.pair, []).append((len(existing) - 1, pd.to_datetime(event.date, errors="coerce")))
             continue
+        if fill_only:
+            continue  # game already present (feed wins) -> never overwrite with the manual seed
         row = existing.loc[pos]
         same_orient = normalizer.canonical(str(row["home_team"])) == event.home
         cur_home, cur_away = (row["home_score"], row["away_score"]) if same_orient else (row["away_score"], row["home_score"])
@@ -260,6 +266,52 @@ def merge_finished_into_csv(
         existing = existing.sort_values("date").reset_index(drop=True)
         existing.to_csv(csv_path, index=False)
     return {"new": new, "changed": changed, "total_finished": len(finished)}
+
+
+def load_manual_seed_events(path: Path, normalizer: TeamNameNormalizer) -> list[LiveEvent]:
+    """Read hand-entered results from a git-tracked CSV into finished LiveEvents.
+
+    The free TheSportsDB feed is incomplete (it omits some 2026 games entirely -- e.g.
+    Australia-Turkiye, Netherlands-Japan, Sweden-Tunisia were never published). This seed is
+    the durable fallback: results committed here deploy to the box like any code and get merged
+    (gap-fill only) so the tracker/Elo see games the feed never carried. Rows without a valid
+    integer score for both teams are skipped, so a header-only or half-filled file is harmless.
+
+    CSV columns: ``date,home_team,away_team,home_score,away_score`` (extra columns ignored).
+    """
+    if not path.exists():
+        return []
+    try:
+        frame = pd.read_csv(path)
+    except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
+        return []
+    required = {"date", "home_team", "away_team", "home_score", "away_score"}
+    if not required.issubset(frame.columns):
+        return []
+    events: list[LiveEvent] = []
+    for _, row in frame.iterrows():
+        home_score, away_score = _to_int(row.get("home_score")), _to_int(row.get("away_score"))
+        if home_score is None or away_score is None:
+            continue  # incomplete row -> not a finished result, skip
+        home = normalizer.canonical(str(row.get("home_team", "")).strip())
+        away = normalizer.canonical(str(row.get("away_team", "")).strip())
+        date = str(row.get("date", "")).strip()
+        if not home or not away or not date:
+            continue
+        events.append(
+            LiveEvent(
+                event_id=f"manual:{date}:{home}:{away}",
+                date=date,
+                kickoff="",
+                home=home,
+                away=away,
+                home_score=home_score,
+                away_score=away_score,
+                status_raw="FT (manual)",
+                state="finished",
+            )
+        )
+    return events
 
 
 def uniform_baseline() -> float:

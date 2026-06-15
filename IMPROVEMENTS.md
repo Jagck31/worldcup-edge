@@ -50,6 +50,22 @@ future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
   (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
 - **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
 
+## 2026-06-15 — Manual-results seed: git-tracked fallback for games the feed omits (Claude)
+- **files:** `src/pipeline/live_tracker.py` (`load_manual_seed_events`, `merge_finished_into_csv(fill_only=)`),
+  `src/pipeline/live_engine.py` (merge in `job_results`), `src/pipeline/orchestrator.py`
+  (`MANUAL_RESULTS_SEED_PATH`), `data/manual/manual_results_seed.csv` (new). · **tests:** 74→77 green.
+- **Why:** confirmed via direct API query that the free TheSportsDB feed simply does not carry some
+  2026 games (06-14 returns only Haiti-Scotland / Germany-Curaçao / Ivory Coast-Ecuador; 06-15 only
+  Belgium-Egypt / Saudi-Uruguay / Spain-Cape Verde). So Australia-Turkiye, Netherlands-Japan and
+  Sweden-Tunisia stay "scheduled" forever — the tracker never sees them. The box is unreachable from
+  the dev sandbox, so a hand-entry on the box won't do; the fix has to deploy through git.
+- **What:** a git-tracked CSV (`manual_results_seed.csv`) the engine merges every results cycle as
+  **gap-fill only** — it adds games the feed lacks but never overwrites a real feed result, and the
+  feed's own `wc2026_results.csv` stays gitignored so auto-deploy can't clobber it. Blank/half-filled
+  rows are skipped, so the file is safe to ship empty. Verified end-to-end with dummy scores: the 3
+  games appear as completed + frozen + scored, then reverted. **Awaiting the real final scores to
+  populate the seed** (won't commit fabricated results).
+
 ## 2026-06-15 — Investigated live tracker log-loss spike → small-sample noise, NO change (Claude)
 - **area:** model · **status:** measured, no code change (correctly *not* "fixed")
 - Live tracker log-loss hit 1.155 (worse than the 1.099 coin-flip) on n=10 games; 4 were draws
