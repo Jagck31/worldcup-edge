@@ -79,14 +79,15 @@ Each run appends a line to `data/processed/scorecard_history.jsonl` so trends ar
 
 ## 4. Backlog (highest leverage first — re-rank each iteration against the scorecard)
 
-**A. Model accuracy on live games is the #1 problem.** Tracker log-loss 1.155 > coin-flip.
-   - Audit the live feature pipeline used for *upcoming* fixtures vs the training features —
-     mismatch (neutral-site flag, host advantage for USA/Canada/Mexico, tournament tag,
-     missing in-tournament Elo updates) silently degrades live predictions.
-   - Check Elo cold-start / regression-to-mean at tournament start; confirm group-stage Elo
-     k-factor and the home/neutral handling for 2026 (all matches neutral except hosts).
-   - Re-examine the goal model (Poisson) inputs the same way.
-   - Gate every change with `evaluate.py --retrain` (held-out) AND watch tracker log-loss.
+**A. Model accuracy on live games — PARKED until the sample grows (was #1).** Tracker
+   log-loss spiked to 1.155 on n=10, but the held-out check (2026-06-15) showed the model's
+   class calibration is correct in aggregate (mean P(draw) 0.220 vs actual 0.233) — the live
+   spike is variance, not a defect. **Do not tune the model on <~30 live games** or you chase
+   noise and wreck the honest 0.809 metric. Revisit when `tracker.completed.n` is larger, then:
+   - Audit the live feature pipeline for *upcoming* fixtures vs training features (neutral flag,
+     host advantage USA/CAN/MEX, tournament tag, in-tournament Elo) — but only act on a signal
+     that also shows up in `evaluate.py --retrain` (held-out), never on live noise alone.
+   - Confirm group-stage Elo k-factor + neutral handling for 2026; re-examine the Poisson goal model.
 
 **B. Strategy / bankroll (ROI −15.5%).**
    - ✅ done: derived-market shrinkage toward de-vigged market (`edge/shrink.py`,

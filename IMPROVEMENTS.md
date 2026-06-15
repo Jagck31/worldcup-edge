@@ -50,6 +50,18 @@ future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
   (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
 - **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
 
+## 2026-06-15 — Investigated live tracker log-loss spike → small-sample noise, NO change (Claude)
+- **area:** model · **status:** measured, no code change (correctly *not* "fixed")
+- Live tracker log-loss hit 1.155 (worse than the 1.099 coin-flip) on n=10 games; 4 were draws
+  and the model never picks draw, so the draw-under-calibration hypothesis was obvious.
+- **Tested it on the large held-out sample before touching anything:** mean predicted P(draw)
+  = 0.220 vs actual draw freq 0.233 (majors: 0.209 vs 0.222) — diff −0.013. Home/Away equally
+  tight. **The model's class calibration is correct in aggregate; the live spike is variance**
+  (e.g. Cape Verde drawing Spain is a real upset, not a model bug). "Fixing" draws would have
+  chased 10 games of noise and worsened the honest 0.809 metric. Logged as a guard against the
+  loop overfitting to small live samples. Backlog re-ranked: live model accuracy is not
+  optimizable at n=10 — wait for games to accumulate; strategy/data/website are next.
+
 ## 2026-06-14 — Flawless audit: 19 verified bugs fixed (Claude + 33-agent workflow)
 Ran an adversarial multi-agent audit (6 auditors × per-finding skeptic verification): 27 raw
 findings, **19 confirmed real** (8 rejected as false positives). All 19 fixed; 67/67 tests green.
