@@ -29,6 +29,27 @@ the next thing.** No human approval required. Pause it any time with
 ---
 <!-- implementer appends below -->
 
+## 2026-06-15 — Measurement backbone + derived-market shrinkage (Claude, autonomous loop kickoff)
+Stood up the autonomous improvement loop: a single objective function + guardrails so every
+future change is measured before it ships. See `AUTONOMOUS_LOOP.md`.
+- **`evaluate.py` (new)** — one scorecard for the whole system (model held-out calibration,
+  live tracker, paper ROI, data completeness, derived-market sanity). Modes: fast / `--retrain`
+  (fresh held-out metrics, gates model changes) / `--live` (fresh Polymarket diag, gates strategy
+  changes). Writes `data/processed/scorecard.json` + appends `scorecard_history.jsonl`.
+- **What it revealed:** data path is clean (95/95 markets map, 100%), so the giant slate edges
+  are *real* model-vs-market disagreements, not bugs — the sim is over-concentrated on the Elo
+  favourite in some groups (J: model 0.94 vs market 0.73) and under-confident in others (E:
+  0.49 vs 0.75). Paper book down (ROI ≈ −15%); live tracker log-loss 1.155 (worse than the
+  1.099 coin-flip) on 10 games — model accuracy on live games is now the #1 backlog item.
+- **`src/edge/shrink.py` (new) + `_build_live_markets`** — humility shrinkage: blend each
+  derived-market (champion/group-winner) probability `market_blend_weight` (config, 0.35) of the
+  way toward the **de-vigged** Polymarket book before detecting edges. Per-contract and
+  direction-aware (trims over-confident favourites, lifts under-confident long-shots), preserves
+  the partition sum, leaves the match-level 1X2 model untouched. **Measured (live):
+  extreme-disagreement edges 4 → 0, slate 27 → 23.** Framed as reversible risk control
+  (`market_blend_weight: 0` restores old behaviour); ROI impact to be measured as markets settle.
+- **Tests:** 67 → 74 green (7 new for the blend). Full engine `--once` smoke test passes.
+
 ## 2026-06-14 — Flawless audit: 19 verified bugs fixed (Claude + 33-agent workflow)
 Ran an adversarial multi-agent audit (6 auditors × per-finding skeptic verification): 27 raw
 findings, **19 confirmed real** (8 rejected as false positives). All 19 fixed; 67/67 tests green.

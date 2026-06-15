@@ -31,6 +31,7 @@ from edge.recommend import (
     summarize_recommendations,
 )
 from edge.scanner import ConsistencyMarket, scan_sum_to_one
+from edge.shrink import blend_toward_market
 from features.build_features import HOST_NATIONS_2026, build_match_features
 from features.elo import EloConfig, EloEngine, EloHistory
 from ingest.polymarket import (
@@ -322,6 +323,9 @@ def _build_live_markets(
 
     order_books: dict[str, OrderBook] = {}
     market_prices: dict[str, float] = {}
+    market_mid_by_name: dict[str, float] = {}     # de-vig / blend target, keyed like model_probs
+    group_partitions: dict[str, list[str]] = {}   # group -> its win-group contract names (sum to 1)
+    champion_names: list[str] = []                # all champion contracts (sum to 1)
     comparison: list[dict] = []
     scanner_markets: list[ConsistencyMarket] = []
     snapshot: list[dict] = []
@@ -340,10 +344,19 @@ def _build_live_markets(
         order_books[mapping.market_name] = book
         best_ask = min((lvl.price for lvl in book.yes_asks), default=None)
         best_bid = max((lvl.price for lvl in book.yes_bids), default=None)
+        mid: float | None = None
         if best_ask is not None and best_bid is not None:
-            market_prices[mapping.market_id] = round((best_ask + best_bid) / 2, 4)
+            mid = (best_ask + best_bid) / 2
+            market_prices[mapping.market_id] = round(mid, 4)
         elif best_ask is not None:
+            mid = best_ask
             market_prices[mapping.market_id] = round(best_ask, 4)
+        if mid is not None and 0.0 < mid < 1.0:
+            market_mid_by_name[mapping.market_name] = mid
+            if mapping.market_type == "win_group" and mapping.group:
+                group_partitions.setdefault(mapping.group, []).append(mapping.market_name)
+            elif mapping.market_type == "champion":
+                champion_names.append(mapping.market_name)
         executable = executable_yes_price(book, target_usd)
         ask_after = round(executable.average_price * fee_mult, 6)
         label = mapping.market_name.rsplit(" - ", 1)[0]
@@ -367,9 +380,26 @@ def _build_live_markets(
     if fetched == 0:
         return None
 
+    # Humility shrinkage: pull the simulated derived-market probabilities a fraction of the way
+    # toward the de-vigged market before detecting edges, so a single over/under-confident sim
+    # contract can't mint an oversized bet. weight=0 keeps the raw model. See edge/shrink.py.
+    blend_weight = float(config.get("market_blend_weight", 0.0))
+    partitions = list(group_partitions.values()) + ([champion_names] if champion_names else [])
+    blended_probs = blend_toward_market(model_probs, market_mid_by_name, partitions, blend_weight)
+    if blend_weight > 0.0:
+        for row in comparison:
+            name = f"{row['market']} - {row['team']}"
+            blended = blended_probs.get(name)
+            if blended is None or row.get("model_prob") is None:
+                continue
+            row["model_prob_raw"] = row["model_prob"]
+            row["model_prob"] = round(blended, 4)
+            if row.get("market_ask") is not None:
+                row["edge_pp"] = round((blended - row["market_ask"]) * 100, 2)
+
     # Codex's recommender: rank YES + NO edges by Kelly impact, size with exposure caps,
     # label risk, and export dashboard rows + exposure meters.
-    candidates = detect_edges(model_probs, order_books, target_usd, min_edge_pp, fees_bps, include_no=True)
+    candidates = detect_edges(blended_probs, order_books, target_usd, min_edge_pp, fees_bps, include_no=True)
     recommendations = build_recommendations(candidates, kelly_config)
     slate = recommendations_to_state_rows(recommendations)
     recommendation_summary = summarize_recommendations(recommendations, kelly_config)
@@ -398,10 +428,16 @@ def _build_live_markets(
         pass
 
     actionable_rows = [r for r in slate if r.get("actionable")]
+    blend_note = (
+        f" Derived-market probs shrunk {blend_weight:.0%} toward the de-vigged market (risk control)."
+        if blend_weight > 0.0 else ""
+    )
     return {
         "source": "LIVE",
         "note": f"Live Polymarket CLOB: {fetched} markets (champion + group winners), YES + NO edges ranked by "
-        f"Kelly impact. {len(actionable_rows)} actionable recommendation(s) clear the {min_edge_pp:.0f}pp + $ min-fill bar.",
+        f"Kelly impact. {len(actionable_rows)} actionable recommendation(s) clear the {min_edge_pp:.0f}pp + $ min-fill bar."
+        + blend_note,
+        "market_blend_weight": blend_weight,
         "slate": slate,
         "scanner_flags": scanner_flags,
         "comparison": comparison,

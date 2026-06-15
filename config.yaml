@@ -3,6 +3,11 @@ kelly_fraction: 0.5        # half-Kelly — more aggressive paper deployment
 max_single_bet_pct: 0.20
 max_total_exposure_pct: 0.80
 min_edge_pp: 5.0
+# Derived-market humility shrinkage (src/edge/shrink.py): blend simulated champion/group-winner
+# probabilities this fraction toward the de-vigged Polymarket book before detecting edges, so a
+# single over/under-confident sim contract can't mint an oversized bet. 0 = raw model (old
+# behaviour); 1 = defer fully to the market. Tune against realised calibration as markets resolve.
+market_blend_weight: 0.35
 min_fillable_usd: 5
 fees_bps: 0
 paper_size_mode: kelly    # 'kelly' = deploy bankroll-Kelly (active); 'fillable' = live-depth (tiny)
